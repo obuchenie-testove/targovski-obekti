@@ -434,7 +434,8 @@ function parseCSV(text) {
   const head = (rows.shift() || []).map((h) => h.trim().toLowerCase());
   return rows.filter((r) => r.some((x) => x.trim())).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] || "").trim()])));
 }
-const csvCell = (v) => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+// Текст, който започва с = + - @, Excel изпълнява като формула; апострофът отпред го прави обикновен текст
+const csvCell = (v) => { let s = String(v ?? ""); if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 function download(name, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
@@ -672,6 +673,9 @@ function errOf(s) {
 }
 // стари данни: добавя полетата за калибровка и прилага новото правило за „по сграда“
 function migrate() {
+  // данни, заредени от файл преди проверката при импорт, минават през нея сега
+  DB.areas = Object.fromEntries(Object.entries(DB.areas).map(([id, a]) => [id, cleanArea(a)]).filter(([, a]) => a));
+  DB.nsi = cleanNsi(DB.nsi);
   for (const a of Object.values(DB.areas)) for (const s of a.shops) {
     if (s.area_model === undefined && !(s.area_true > 0)) { s.area_model = s.area; s.area_method = s.area_conf; }
     if (s.area_conf === "по сграда" && !(s.area_true > 0) && s.area > CATEGORIES[s.cat].size[1] && !/^самостоятелна/.test(s.area_note || "")) {
@@ -690,6 +694,58 @@ function confirmArea(s, v) {
   }
   persist(); CAL = calibration();
 }
+
+/* =====================================================================
+   ПРОВЕРКА НА ДАННИ ОТ ФАЙЛ: резервното копие може да е чуждо, затова от него
+   се взимат само познатите полета и само с правилния тип (числата остават числа)
+   ===================================================================== */
+const numV = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+const nonNeg = (v) => numV(v) !== null && v >= 0;
+const strV = (v, max = 300) => (typeof v === "string" ? v.slice(0, max) : "");
+const urlV = (v) => (/^https?:\/\//i.test(strV(v, 2000)) ? strV(v, 2000) : "");
+const arrV = (v) => (Array.isArray(v) ? v : []);
+const ptV = (p) => (Array.isArray(p) && numV(p[0]) !== null && numV(p[1]) !== null ? [p[0], p[1]] : null);
+const bboxV = (b) => (Array.isArray(b) && b.length === 4 && b.every((x) => numV(x) !== null) ? b.slice() : null);
+function cleanShop(s) {
+  if (!s || !CATEGORIES[s.cat] || !strV(s.id) || !ptV([s.lat, s.lon])) return null;
+  const area = numV(s.area) > 0 ? s.area : CATEGORIES[s.cat].size[1], conf = strV(s.area_conf, 40) || "типична";
+  const out = { id: strV(s.id), name: strV(s.name) || "(без име)", brand: strV(s.brand), cat: s.cat, lat: s.lat, lon: s.lon,
+    address: strV(s.address), phone: strV(s.phone, 60), website: strV(s.website, 500), hours: strV(s.hours), mall: strV(s.mall),
+    area, area_conf: conf, area_err: numV(s.area_err) ?? 0.5, area_note: strV(s.area_note),
+    area_model: numV(s.area_model) ?? area, area_method: strV(s.area_method, 40) || conf,
+    sources: arrV(s.sources).map((x) => strV(x, 100)).filter(Boolean), osm_url: urlV(s.osm_url) };
+  if (numV(s.area_true) > 0) out.area_true = s.area_true;
+  if (s.prev && numV(s.prev.area) > 0) out.prev = { area: s.prev.area, conf: strV(s.prev.conf, 40), note: strV(s.prev.note) };
+  return out;
+}
+function cleanArea(a) {
+  const bbox = a && bboxV(a.bbox); if (!bbox) return null;
+  return { name: strV(a.name, 100) || "Зона", bbox, collected: strV(a.collected, 40), nsiResort: strV(a.nsiResort, 100), other_shops: numV(a.other_shops) ?? 0,
+    shops: arrV(a.shops).map(cleanShop).filter(Boolean),
+    stays: arrV(a.stays).filter((h) => h && STAY_TYPES[h.type] && ptV([h.lat, h.lon]) && nonNeg(h.beds))
+      .map((h) => ({ name: strV(h.name), type: h.type, lat: h.lat, lon: h.lon, beds: h.beds, beds_how: strV(h.beds_how, 40) })),
+    malls: arrV(a.malls).filter((m) => m && ptV([m.lat, m.lon]))
+      .map((m) => ({ name: strV(m.name) || "Търговски център", lat: m.lat, lon: m.lon, area: numV(m.area), poly: arrV(m.poly).map(ptV).filter(Boolean) })),
+    tourism: arrV(a.tourism).filter((r) => r && Number.isInteger(r.year))
+      .map((r) => ({ year: r.year, nights: numV(r.nights) ?? 0, arrivals: numV(r.arrivals) ?? 0, source: strV(r.source, 100) })),
+    samples: arrV(a.samples).filter((x) => x && bboxV(x.bbox) && nonNeg(x.osm) && numV(x.real) > 0)
+      .map((x) => ({ bbox: x.bbox.slice(), osm: x.osm, real: x.real, note: strV(x.note, 100), cats: arrV(x.cats).filter((c) => CATEGORIES[c]), date: strV(x.date, 20) })) };
+}
+const NSI_FIELDS = new Set(["beds", "bedDays", "places", ...["revenue", "persons", "nights"].flatMap((k) => [k, k + "_bg", k + "_fr"])]);
+function cleanNsi(n) {
+  const obj = (o) => (o && typeof o === "object" ? o : {});
+  const part = (o, re) => Object.fromEntries(Object.entries(obj(o)).filter(([k, v]) => re.test(k) && v && typeof v === "object").map(([k, v]) => [k,
+    Object.fromEntries(Object.entries(v).filter(([f, x]) => (f === "revenue_unit" ? typeof x === "string" : NSI_FIELDS.has(f) && numV(x) !== null))
+      .map(([f, x]) => [f, f === "revenue_unit" ? x.slice(0, 40) : x]))]));
+  const out = {};
+  for (const [resort, R] of Object.entries(obj(n))) {
+    if (!resort.trim() || !R || typeof R !== "object") continue;
+    out[resort.slice(0, 100)] = { annual: part(R.annual, /^\d{4}$/), monthly: part(R.monthly, /^\d{4}-\d{2}$/), quarterly: part(R.quarterly, /^\d{4}-Q[1-4]$/),
+      sources: arrV(R.sources).map(urlV).filter(Boolean) };
+  }
+  return out;
+}
+const areaId = (id) => (/^[\w-]{1,60}$/.test(id) ? id : slug(id));
 
 /* =====================================================================
    ДАННИ ОТ НСИ (CSV файловете от папката „NSI — Черноморски курорти“)
@@ -740,7 +796,7 @@ function parseNSI(text, fileName) {
       (R.quarterly[`${year}-Q${sub}`] = R.quarterly[`${year}-Q${sub}`] || {});
     bucket[key] = val;
     if (key.startsWith("revenue")) bucket.revenue_unit = unit;
-    const src = r[kSrc] ? String(r[kSrc]).split("?")[0] : "";
+    const src = r[kSrc] ? urlV(String(r[kSrc]).split("?")[0]) : "";
     if (src && !R.sources.includes(src)) R.sources.push(src);
     seen.add(resort); n++;
   }
@@ -814,7 +870,7 @@ function renderAnalysis(list) {
     : `<div class="tile"><div class="l">Легла в зоната</div><div class="v">≈ ${fmt(osmBeds)}</div><div class="s">оценка от OSM, ${fmt(a.stays.length)} места за настаняване</div></div>`;
   const peakTile = useNsi
     ? `<div class="tile"><div class="l">Гости на нощ, пик</div><div class="v">${fmt(peak)}</div><div class="s">средно през ${MONTHS_FULL[S.peak.m - 1]} ${S.Y}, по нощувки от НСИ</div></div>`
-    : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост ${Math.round(state.occ * 100)}%</label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
+    : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост <span id="occPct">${Math.round(state.occ * 100)}%</span></label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
   const countTile = C
     ? `<div class="tile"><div class="l">Обекти</div><div class="v">≈ ${fmt(list.length / C.rate)}</div><div class="s">${fmt(list.length)} на картата · покритие ${Math.round(C.rate * 100)}% по ${C.n} ${C.n === 1 ? "проба" : "проби"}</div></div>`
     : `<div class="tile"><div class="l">Обекти</div><div class="v">поне ${fmt(list.length)}</div><div class="s">толкова познава OSM; реалните са повече — виж „Покритие“</div></div>`;
@@ -843,7 +899,11 @@ function renderAnalysis(list) {
     ${R ? nsiCard(a, R, S) : manualCard(a)}
     <p class="note" style="margin:0">Карта: Esri, CARTO. Данни: © участниците в OpenStreetMap (ODbL), НСИ. Безплатните публични услуги са за лична и лека употреба; за работа с клиенти виж Настройки → Карта и данни.</p>`;
 
-  if ($("occ")) $("occ").oninput = (e) => { state.occ = +e.target.value; saveUI(); renderAnalysis(filtered()); };
+  // Докато плъзгачът се влачи, се сменя само процентът; анализът (и с него плъзгачът) се рисува наново при пускане
+  if ($("occ")) {
+    $("occ").oninput = (e) => { $("occPct").textContent = Math.round(e.target.value * 100) + "%"; };
+    $("occ").onchange = (e) => { state.occ = +e.target.value; saveUI(); renderAnalysis(filtered()); $("occ").focus(); };
+  }
   if ($("nsiYear")) $("nsiYear").onchange = (e) => { state.nsiYear = +e.target.value; renderAnalysis(filtered()); };
   if ($("nsiOpen")) $("nsiOpen").onclick = nsiDialog;
   bindCoverage(a, list);
@@ -987,7 +1047,7 @@ async function collect(id, name, bbox) {
     const osm = await fetchOverpass(bbox, progress);
     const res = processOsm(osm, bbox);
     const prev = DB.areas[id];
-    // запазва ръчно добавените (CSV) обекти и туристическите данни при обновяване
+    // запазва ръчно добавените (CSV) обекти, туристическите данни и пробите за покритие при обновяване
     if (prev) {
       const old = new Map(prev.shops.map((x) => [x.id, x]));
       for (const sh of res.shops) {
@@ -996,7 +1056,7 @@ async function collect(id, name, bbox) {
       }
     }
     if (prev) mergeInto(res.shops, prev.shops.filter((s) => !s.id.startsWith("osm:")).map((s) => Object.assign({}, s, { sources: [...s.sources] })));
-    DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [] }, res);
+    DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [], samples: prev?.samples || [] }, res);
     if (DB.settings.proxy && DB.settings.proxyKey) { progress("Проверка на сайтовете…"); await enrichArea(DB.areas[id], progress); }
     state.area = id; saveUI(); persist(); CAL = calibration();
     progress(""); loadArea();
@@ -1086,12 +1146,13 @@ function exportDialog() {
       <button class="btn" id="eJson">Резервно копие на всички зони (JSON)</button>
       <button class="btn" id="eLoad">Зареди резервно копие</button>
     </div>
-    <p class="hint" style="margin-top:12px">Данните се пазят в този браузър. Резервното копие ги пренася на друг компютър или браузър.</p>
+    <p class="hint" style="margin-top:12px">Данните се пазят в този браузър. Резервното копие ги пренася на друг компютър или браузър. Настройките (proxy.php, ключът, картата) не влизат в него.</p>
     <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
     <button class="linkbtn" id="eDel" style="color:var(--bad)">Изтрий зоната „${esc(A().name)}“</button>
     <div id="eConfirm"></div>`, () => {
     $("eCsv").onclick = () => download(`${state.area}.csv`, exportCSV(A()), "text/csv");
-    $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(DB), "application/json");
+    // Без настройките: ключът за proxy.php не трябва да тръгва с файла
+    $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ areas: DB.areas, nsi: DB.nsi }), "application/json");
     $("eLoad").onclick = () => $("fileJson").click();
     $("eDel").onclick = () => {
       $("eConfirm").innerHTML = `<p class="err">Сигурен ли си? Ще се изтрият и импортираните обекти и туристическите данни за зоната.</p><button class="btn" id="eYes">Да, изтрий</button>`;
@@ -1103,10 +1164,15 @@ $("fileJson").onchange = async (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try {
     const j = JSON.parse(await f.text());
-    if (!j.areas) throw new Error();
-    Object.assign(DB.areas, j.areas); if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, j.nsi); if (j.settings) DB.settings = Object.assign(DB.settings, j.settings);
-    persist(); closeModal(); loadArea();
-    toastMeta(`Заредени ${Object.keys(j.areas).length} зони от резервното копие.`);
+    if (!j || !j.areas || typeof j.areas !== "object") throw new Error();
+    // Настройките от файла не се взимат: чужд файл иначе може да пренасочи сайтовете и ключа към свой сървър
+    const areas = Object.entries(j.areas).map(([id, a]) => [areaId(id), cleanArea(a)]).filter(([, a]) => a);
+    if (!areas.length) throw new Error();
+    for (const [id, a] of areas) DB.areas[id] = a;
+    if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, cleanNsi(j.nsi));
+    persist(); CAL = calibration(); closeModal(); loadArea();
+    const skipped = Object.keys(j.areas).length - areas.length;
+    toastMeta(`Заредени ${areas.length} зони от резервното копие${skipped ? `, ${skipped} пропуснати (повредени)` : ""}. Настройките не се пренасят.`);
   } catch (err) { toastMeta("Файлът не е резервно копие от тази система."); }
 };
 

@@ -9,7 +9,10 @@ const KEY = 'СМЕНИ-МЕ-с-дълъг-случаен-ключ';
 const MAX_BYTES = 600000;
 
 header('Access-Control-Allow-Origin: *');
-header('Content-Type: text/html; charset=utf-8');
+// Чуждата страница се връща като обикновен текст: браузърът никога не я показва като страница от този домейн
+header('Content-Type: text/plain; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+header("Content-Security-Policy: sandbox; default-src 'none'");
 
 if (KEY === 'СМЕНИ-МЕ-с-дълъг-случаен-ключ' || !hash_equals(KEY, (string)($_GET['key'] ?? ''))) {
     http_response_code(403); exit('forbidden');
