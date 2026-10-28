@@ -1,0 +1,1038 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Търговски обекти</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: инструмент — лента отгоре, филтри вляво, карта вдясно, анализ под картата */
+:root {
+  --bg: #eef1ef; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67; --line: #d5ddd9;
+  --accent: #1d6b5f; --accent-fg: #ffffff; --accent-soft: #dcece8; --warn: #a1620f; --bad: #b3362b; --chip: #f4f7f5;
+  --tile-filter: none; --shadow: 0 8px 30px rgba(20,40,35,.18);
+  --font-display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --font-body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111615; --panel: #1a211f; --fg: #e3ebe8; --muted: #93a39e; --line: #2c3633;
+  --accent: #5fc0ad; --accent-fg: #0d1a17; --accent-soft: #1f3631; --warn: #e0a24a; --bad: #ef7a6e; --chip: #212a28;
+  --tile-filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); --shadow: 0 8px 30px rgba(0,0,0,.5); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111615; --panel: #1a211f; --fg: #e3ebe8; --muted: #93a39e; --line: #2c3633;
+  --accent: #5fc0ad; --accent-fg: #0d1a17; --accent-soft: #1f3631; --warn: #e0a24a; --bad: #ef7a6e; --chip: #212a28;
+  --tile-filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); --shadow: 0 8px 30px rgba(0,0,0,.5); color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+html, body { margin: 0 }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font-body); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-block: 14px; }
+h1 { font: 700 18px/1.1 var(--font-display); margin: 0 6px 0 0; letter-spacing: -.01em }
+h2 { font: 600 12px/1.2 var(--font-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0 0 10px }
+select, input[type=text], input[type=number], input[type=password] { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-width: 0 }
+button { font: inherit; cursor: pointer }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px; padding: 7px 12px; white-space: nowrap }
+.btn:hover { border-color: var(--accent) }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600 }
+.btn:disabled { opacity: .5; cursor: default }
+.spacer { flex: 1 }
+.meta { color: var(--muted); font-size: 13px }
+.tabnum { font-variant-numeric: tabular-nums }
+
+.main { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; }
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; min-height: 0; height: 68vh; }
+aside section { padding: 12px 14px; border-bottom: 1px solid var(--line) }
+.cats { display: grid; gap: 2px }
+.cat { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 5px; cursor: pointer; }
+.cat:hover { background: var(--chip) }
+.cat input { margin: 0; accent-color: var(--accent) }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block }
+.cat .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.linkbtn { background: none; border: 0; color: var(--accent); padding: 0; font-size: 12px }
+.toggle { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 13px }
+.toggle input { accent-color: var(--accent) }
+#brand { width: 100% }
+.list { overflow-y: auto; flex: 1; min-height: 0; padding: 6px 6px 10px }
+.item { padding: 7px 8px; border-radius: 6px; cursor: pointer; display: grid; grid-template-columns: 10px minmax(0,1fr) auto; gap: 8px; align-items: baseline }
+.item:hover, .item.on { background: var(--accent-soft) }
+.item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.item .a { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums }
+
+.mapbox { position: relative; height: 68vh; border-radius: var(--r); overflow: hidden; border: 1px solid var(--line) }
+#map { position: absolute; inset: 0; background: var(--bg) }
+.street-tiles { filter: var(--tile-filter) }
+.leaflet-control-layers { background: var(--panel); color: var(--fg); border-color: var(--line) !important }
+.float { position: absolute; z-index: 500; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow) }
+.detail { top: 12px; right: 12px; width: min(330px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; padding: 14px 16px }
+.detail h3 { font: 600 16px/1.25 var(--font-body); margin: 0 30px 4px 0 }
+.close { position: absolute; top: 8px; right: 10px; background: none; border: 0; font-size: 20px; color: var(--muted) }
+.kv { display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 5px 10px; margin-top: 10px; font-size: 13px }
+.kv dt { color: var(--muted) } .kv dd { margin: 0; overflow-wrap: anywhere }
+.pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--chip); border: 1px solid var(--line); margin: 0 4px 2px 0 }
+.pill.m { border-color: var(--accent); color: var(--accent) }
+.pill.t { border-color: var(--warn); color: var(--warn) }
+a { color: var(--accent) }
+
+.progress { left: 50%; bottom: 16px; transform: translateX(-50%); padding: 10px 16px; font-size: 13px; width: min(420px, calc(100% - 24px)) }
+.progress .barl { height: 4px; background: var(--chip); border-radius: 2px; margin-top: 8px; overflow: hidden }
+.progress .barl i { display: block; height: 100%; width: 30%; background: var(--accent); animation: slide 1.2s ease-in-out infinite }
+@keyframes slide { 0% { margin-left: -30% } 100% { margin-left: 100% } }
+@media (prefers-reduced-motion: reduce) { .progress .barl i { animation: none; width: 100% } }
+
+/* модален прозорец */
+.modal { position: fixed; inset: 0; z-index: 2000; background: rgba(10,20,18,.45); display: grid; place-items: center; padding: 16px }
+.dialog { background: var(--panel); color: var(--fg); border-radius: 10px; box-shadow: var(--shadow); width: min(560px, 100%); max-height: 90vh; overflow: auto; padding: 20px 22px; position: relative }
+.dialog h3 { font: 700 16px/1.2 var(--font-display); margin: 0 0 14px }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; color: var(--muted) }
+.tabs button.on { color: var(--fg); border-color: var(--accent) }
+.field { display: grid; gap: 5px; margin-bottom: 12px }
+.field label { font-size: 13px; color: var(--muted) }
+.hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; max-width: 65ch }
+.err { color: var(--bad); font-size: 13px; margin: 6px 0 }
+.ok { color: var(--accent); font-size: 13px; margin: 6px 0 }
+
+.analysis { margin-top: 14px; padding-bottom: 28px; display: grid; gap: 14px }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px }
+.tile .v { font: 600 24px/1.1 var(--font-body); font-variant-numeric: tabular-nums; margin-top: 4px }
+.tile .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em }
+.tile .s { color: var(--muted); font-size: 12px; margin-top: 4px }
+.cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0 }
+.scroll { overflow-x: auto }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap }
+th:first-child, td:first-child { text-align: left }
+th { color: var(--muted); font-weight: 500; font-size: 12px }
+td input { width: 110px; padding: 4px 6px }
+.bar { height: 6px; border-radius: 3px; display: flex; overflow: hidden; background: var(--chip); min-width: 80px }
+.bar i { display: block; height: 100% }
+.note { color: var(--muted); font-size: 12px; margin-top: 8px; max-width: 75ch }
+input[type=range] { accent-color: var(--accent); width: 140px }
+.empty { padding: 30px 20px; text-align: center; color: var(--muted) }
+.welcome { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 22px; width: min(400px, calc(100% - 24px)); text-align: center }
+.welcome p { color: var(--muted); margin: 8px 0 14px }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+
+@media (max-width: 860px) {
+  .main { grid-template-columns: minmax(0, 1fr) }
+  aside { height: auto } .list { max-height: 260px }
+  .mapbox { height: 60vh; order: -1 }
+  .cols { grid-template-columns: minmax(0, 1fr) }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Търговски обекти</h1>
+    <select id="area" aria-label="Зона"></select>
+    <button class="btn primary" id="btnNew">+ Нова зона</button>
+    <button class="btn" id="btnRefresh" title="Събери отново данните за тази зона">Обнови зоната</button>
+    <span class="meta" id="meta"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="btnNsi">Данни НСИ</button>
+    <button class="btn" id="btnImport">Импорт CSV</button>
+    <button class="btn" id="btnExport">Експорт</button>
+    <button class="btn" id="btnSettings" aria-label="Настройки">Настройки</button>
+  </header>
+
+  <div class="main">
+    <aside>
+      <section>
+        <div class="row" style="justify-content:space-between"><h2 style="margin:0">Бранш</h2>
+          <span><button class="linkbtn" id="all">всички</button> · <button class="linkbtn" id="none">нито един</button></span></div>
+        <div class="cats" id="cats" style="margin-top:8px"></div>
+      </section>
+      <section style="display:grid;gap:8px">
+        <h2 style="margin:0">Марка</h2>
+        <input type="text" id="brand" list="brands" placeholder="Всички марки">
+        <datalist id="brands"></datalist>
+        <label class="toggle"><input type="checkbox" id="chains"> Само вериги (2+ обекта)</label>
+        <label class="toggle"><input type="checkbox" id="inmall"> Само в молове</label>
+        <label class="toggle"><input type="checkbox" id="showstay"> Покажи хотелите</label>
+      </section>
+      <div class="list" id="list"></div>
+    </aside>
+    <div class="mapbox">
+      <div id="map"></div>
+      <div class="float detail" id="detail" hidden></div>
+      <div class="float progress" id="progress" hidden><span id="progressText">Събиране…</span><div class="barl"><i></i></div></div>
+      <div class="float welcome" id="welcome" hidden>
+        <h3 style="font:700 16px/1.2 var(--font-display);margin:0">Няма събрани зони</h3>
+        <p>Избери място и системата ще намери магазините, сградите и хотелите в него.</p>
+        <button class="btn primary" id="btnWelcome">Събери Слънчев бряг</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysis" id="analysis"></div>
+</div>
+
+<div class="modal" id="modal" hidden><div class="dialog" id="dialog" role="dialog" aria-modal="true"></div></div>
+<input type="file" id="fileCsv" accept=".csv,text/csv" hidden>
+<input type="file" id="fileJson" accept=".json,application/json" hidden>
+<input type="file" id="fileNsi" accept=".csv,text/csv" multiple hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+/* =====================================================================
+   НАСТРОЙКИ: браншове, зони, типични площи
+   ===================================================================== */
+const CATEGORIES = {
+  drehi:     { label: "Дрехи",                  color: "#2f6fd6", shop: ["clothes", "fashion", "boutique"],            size: [25, 120, 2500] },
+  obuvki:    { label: "Обувки",                 color: "#8a4fd1", shop: ["shoes"],                                      size: [20, 80, 800] },
+  kozmetika: { label: "Козметика и парфюмерия", color: "#d1477a", shop: ["cosmetics", "perfumery", "chemist"],          size: [20, 70, 600] },
+  studia:    { label: "Козметични студиа",      color: "#e07a2f", shop: ["beauty", "hairdresser", "massage", "tattoo"], size: [12, 45, 300] },
+  bijuta:    { label: "Бижута и часовници",     color: "#b8901a", shop: ["jewelry", "watches"],                          size: [8, 35, 250] },
+  aksesoari: { label: "Чанти и аксесоари",      color: "#6b7a2a", shop: ["bag", "leather", "fashion_accessories"],      size: [10, 40, 300] },
+  sport:     { label: "Спортни стоки",          color: "#1f9a8a", shop: ["sports", "outdoor"],                           size: [30, 200, 3000] },
+  optika:    { label: "Оптика",                 color: "#4a5bb8", shop: ["optician"],                                    size: [15, 50, 250] },
+  detski:    { label: "Детски стоки и играчки", color: "#c4512d", shop: ["baby_goods", "toys"],                          size: [20, 80, 1500] },
+  suveniri:  { label: "Сувенири и подаръци",    color: "#7d6655", shop: ["gift", "souvenir"],                            size: [6, 30, 300] },
+};
+const STAY_TYPES = { hotel: [150, 4], apartment: [4, 1], guest_house: [20, 2], hostel: [30, 2], motel: [30, 2], chalet: [6, 1] };
+const PRESETS = {
+  "slanchev-bryag": ["Слънчев бряг",     [42.672, 27.695, 42.722, 27.727]],
+  "nesebar":        ["Несебър",          [42.648, 27.705, 42.667, 27.745]],
+  "sveti-vlas":     ["Свети Влас",       [42.700, 27.740, 42.725, 27.775]],
+  "burgas-centar":  ["Бургас (център)",  [42.485, 27.455, 42.515, 27.485]],
+  "plovdiv-centar": ["Пловдив (център)", [42.135, 24.730, 42.160, 24.765]],
+};
+const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+const DEDUP_M = 40;
+const MAX_AREA_DEG2 = 0.06; // ~ 25×25 км; по-големи зони натоварват Overpass
+
+/* =====================================================================
+   СЪХРАНЕНИЕ (в този браузър)
+   ===================================================================== */
+const KEY = "targovski-obekti-v1";
+let DB = { areas: {}, nsi: {}, settings: { proxy: "", proxyKey: "" }, ui: {} };
+let memoryOnly = false;
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.areas) DB = Object.assign(DB, s); } catch (e) { memoryOnly = true; }
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify(DB)); return true; }
+  catch (e) { memoryOnly = true; toastMeta("Браузърът не позволи запис. Направи Експорт → резервно копие, за да не загубиш данните."); return false; }
+}
+
+/* =====================================================================
+   ПОМОЩНИ
+   ===================================================================== */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (n) => Math.round(n).toLocaleString("bg-BG");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const TR = { а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sht",ъ:"a",ь:"y",ю:"yu",я:"ya" };
+const norm = (s) => [...String(s || "").toLowerCase()].map((c) => TR[c] ?? c).join("").replace(/[^a-z0-9]/g, "");
+const slug = (s) => norm(s).slice(0, 40) || "zona" + Date.now();
+function toastMeta(t) { $("meta").textContent = t; }
+
+/* ГЕОМЕТРИЯ — локална проекция в метри */
+const toXY = (lat, lon, lat0) => [lon * 111320 * Math.cos(lat0 * Math.PI / 180), lat * 110540];
+function polyArea(poly, lat0) {
+  if (!poly || poly.length < 4) return 0;
+  let s = 0; const p = poly.map(([a, b]) => toXY(a, b, lat0));
+  for (let i = 0; i < p.length - 1; i++) s += p[i][0] * p[i + 1][1] - p[i + 1][0] * p[i][1];
+  return Math.abs(s) / 2;
+}
+function inPoly(lat, lon, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i], [yj, xj] = poly[j];
+    if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi) inside = !inside;
+  }
+  return inside;
+}
+function distM(a, b) { const l0 = (a[0] + b[0]) / 2, p = toXY(a[0], a[1], l0), q = toXY(b[0], b[1], l0); return Math.hypot(p[0] - q[0], p[1] - q[1]); }
+class PolyIndex {
+  constructor(items, cell = 0.002) {
+    this.cell = cell; this.grid = new Map();
+    for (const it of items) {
+      const la = it.poly.map((p) => p[0]), lo = it.poly.map((p) => p[1]);
+      it.bb = [Math.min(...la), Math.min(...lo), Math.max(...la), Math.max(...lo)];
+      for (let gx = Math.floor(it.bb[0] / cell); gx <= Math.floor(it.bb[2] / cell); gx++)
+        for (let gy = Math.floor(it.bb[1] / cell); gy <= Math.floor(it.bb[3] / cell); gy++) {
+          const k = gx + ":" + gy; if (!this.grid.has(k)) this.grid.set(k, []); this.grid.get(k).push(it);
+        }
+    }
+  }
+  find(lat, lon) {
+    return (this.grid.get(Math.floor(lat / this.cell) + ":" + Math.floor(lon / this.cell)) || [])
+      .filter((it) => lat >= it.bb[0] && lat <= it.bb[2] && lon >= it.bb[1] && lon <= it.bb[3] && inPoly(lat, lon, it.poly));
+  }
+}
+
+/* =====================================================================
+   СЪБИРАНЕ ОТ OPENSTREETMAP
+   ===================================================================== */
+function overpassQuery(b) {
+  const bb = b.join(","), stay = Object.keys(STAY_TYPES).join("|");
+  return `[out:json][timeout:180];
+nwr["shop"](${bb})->.shops;
+nwr["tourism"~"^(${stay})$"](${bb})->.stay;
+.shops out geom;
+.stay out geom;
+(way["building"](around.shops:15); way["building"](around.stay:15);)->.blds;
+.blds out geom;
+nwr["shop"="mall"](${bb});
+out geom;`;
+}
+
+async function fetchOverpass(bbox, onStep) {
+  const body = new URLSearchParams({ data: overpassQuery(bbox) });
+  let last;
+  for (let round = 0; round < 2; round++) {
+    for (const url of OVERPASS) {
+      try {
+        onStep(`Свързване с ${new URL(url).host}…`);
+        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 200000);
+        const r = await fetch(url, { method: "POST", body, signal: ctl.signal });
+        clearTimeout(t);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        onStep("Обработка на данните…");
+        return await r.json();
+      } catch (e) { last = e; await sleep(1500); }
+    }
+    onStep("Сървърите са натоварени, нов опит след 20 секунди…");
+    await sleep(20000);
+  }
+  throw new Error("OpenStreetMap не отговаря (" + (last && last.message) + "). Опитай след малко.");
+}
+
+function shapeOf(el) {
+  if (el.type === "node") return [el.lat, el.lon, null];
+  if (el.type === "way" && el.geometry) {
+    const g = el.geometry.filter(Boolean).map((p) => [p.lat, p.lon]);
+    if (!g.length) return null;
+    const closed = g.length >= 4 && g[0][0] === g[g.length - 1][0] && g[0][1] === g[g.length - 1][1];
+    return [g.reduce((s, p) => s + p[0], 0) / g.length, g.reduce((s, p) => s + p[1], 0) / g.length, closed ? g : null];
+  }
+  if (el.bounds) {
+    const b = el.bounds; let outer = null;
+    const m = (el.members || []).find((m) => m.role === "outer" && m.geometry);
+    if (m) { const g = m.geometry.filter(Boolean).map((p) => [p.lat, p.lon]); if (g.length >= 4 && g[0][0] === g[g.length - 1][0] && g[0][1] === g[g.length - 1][1]) outer = g; }
+    return [(b.minlat + b.maxlat) / 2, (b.minlon + b.maxlon) / 2, outer];
+  }
+  return null;
+}
+function categoryOf(t) { for (const [id, c] of Object.entries(CATEGORIES)) if (c.shop.includes(t.shop)) return id; return null; }
+function addressOf(t) {
+  const st = [t["addr:street"], t["addr:housenumber"]].filter(Boolean).join(" ");
+  return [st, t["addr:city"] || t["addr:place"]].filter(Boolean).join(", ");
+}
+function levels(t, d) { const v = parseInt(String(t["building:levels"] || "").split(";")[0], 10); return v > 0 ? v : d; }
+const RETAIL = new Set(["retail", "commercial", "kiosk", "supermarket", "shop", "mall"]);
+const num = (v) => { const n = parseInt(String(v ?? "").replace(/\D/g, ""), 10); return n > 0 ? n : 0; };
+
+function processOsm(osm, bbox) {
+  const lat0 = (bbox[0] + bbox[2]) / 2;
+  const shops = [], stays = [], blds = [], malls = [], seen = new Set();
+  for (const el of osm.elements || []) {
+    const t = el.tags || {}, key = el.type + el.id, sh = shapeOf(el);
+    if (!sh) continue;
+    const [lat, lon, poly] = sh;
+    if (t.shop === "mall") { if (!seen.has(key)) malls.push({ name: t.name || "Търговски център", lat, lon, poly, area: poly ? Math.round(polyArea(poly, lat0)) : null }); seen.add(key); continue; }
+    if (t.shop) { if (seen.has(key)) continue; seen.add(key); shops.push({ el, t, lat, lon, poly, cat: categoryOf(t) }); }
+    else if (STAY_TYPES[t.tourism]) { if (seen.has(key)) continue; seen.add(key); stays.push({ el, t, lat, lon, poly }); }
+    if (t.building && poly && !seen.has("b" + el.id)) { seen.add("b" + el.id); blds.push({ t, poly, area: polyArea(poly, lat0), shops: 0 }); }
+  }
+  const bIdx = new PolyIndex(blds), mIdx = new PolyIndex(malls.filter((m) => m.poly));
+  for (const s of shops) for (const b of bIdx.find(s.lat, s.lon)) b.shops++;
+
+  function shopArea(s) {
+    const [lo, typ, hi] = CATEGORIES[s.cat].size;
+    if (s.poly) { const a = polyArea(s.poly, lat0); if (a > 3 && a < 30000) return [Math.round(a), "измерена", 0.1, "контурът на обекта в OSM"]; }
+    const hits = bIdx.find(s.lat, s.lon);
+    if (hits.length) {
+      const b = hits.reduce((x, y) => (y.area < x.area ? y : x)), n = Math.max(1, b.shops), bt = b.t.building || "yes";
+      let share = b.area / n, note;
+      if (RETAIL.has(bt) || mIdx.find(s.lat, s.lon).length) { share = b.area * levels(b.t, 1) / n; note = `търговска сграда ${fmt(b.area)} м², ${n} обекта в нея`; }
+      else if (b.area <= 250 && n === 1) note = `самостоятелна малка сграда ${fmt(b.area)} м²`;
+      else if (share < typ) note = `сграда ${fmt(b.area)} м², поделена на ${n} обекта`;
+      else return [typ, "типична", 0.5, `партер на по-голяма сграда (${bt}); типична площ за бранша`];
+      return [Math.round(Math.min(Math.max(share, lo), hi)), "по сграда", 0.35, note];
+    }
+    return [typ, "типична", 0.5, "няма данни за сградата; типична площ за бранша"];
+  }
+  function beds(st) {
+    const t = st.t, [defB, defL] = STAY_TYPES[t.tourism];
+    const b = num(t.beds) || num(t.capacity); if (b) return [b, "от OSM"];
+    const r = num(t.rooms); if (r) return [r * 2, "стаи × 2"];
+    let area = 0, lv = defL;
+    if (st.poly) { area = polyArea(st.poly, lat0); lv = levels(t, defL); }
+    else { const h = bIdx.find(st.lat, st.lon); if (h.length) { const bb = h.reduce((x, y) => (y.area < x.area ? y : x)); area = bb.area; lv = levels(bb.t, defL); } }
+    if (area && ["hotel", "hostel", "motel", "guest_house"].includes(t.tourism))
+      return [Math.max(4, Math.min(2500, Math.round(area * lv * 0.65 / 28 * 2))), "по сграда"];
+    return [defB, "типично"];
+  }
+
+  const records = shops.filter((s) => s.cat).map((s) => {
+    const t = s.t, [area, conf, err, note] = shopArea(s), m = mIdx.find(s.lat, s.lon);
+    return {
+      id: `osm:${s.el.type[0]}${s.el.id}`, name: t.name || t.brand || "(без име)", brand: t.brand || "", cat: s.cat,
+      lat: +s.lat.toFixed(6), lon: +s.lon.toFixed(6), address: addressOf(t),
+      phone: t.phone || t["contact:phone"] || "", website: t.website || t["contact:website"] || t["brand:website"] || "",
+      hours: t.opening_hours || "", mall: m.length ? m[0].name : "",
+      area, area_conf: conf, area_err: err, area_note: note, sources: ["OpenStreetMap"],
+      osm_url: `https://www.openstreetmap.org/${s.el.type}/${s.el.id}`,
+    };
+  });
+  return {
+    shops: records,
+    other_shops: shops.filter((s) => !s.cat).length,
+    stays: stays.map((st) => { const [b, how] = beds(st); return { name: st.t.name || "", type: st.t.tourism, lat: +st.lat.toFixed(6), lon: +st.lon.toFixed(6), beds: b, beds_how: how }; }),
+    malls: malls.map((m) => ({ name: m.name, lat: m.lat, lon: m.lon, area: m.area, poly: (m.poly || []).map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]) })),
+  };
+}
+
+/* ОБЕДИНЯВАНЕ на обекти от различни източници */
+function same(a, b) {
+  if (a.cat !== b.cat || distM([a.lat, a.lon], [b.lat, b.lon]) > DEDUP_M) return false;
+  const x = norm(a.name), y = norm(b.name);
+  return !!(x && y && (x.includes(y) || y.includes(x)));
+}
+function mergeInto(list, extra) {
+  let added = 0, matched = 0;
+  for (const x of extra) {
+    const hit = list.find((r) => same(r, x));
+    if (!hit) { list.push(x); added++; continue; }
+    matched++;
+    for (const s of x.sources) if (!hit.sources.includes(s)) hit.sources.push(s);
+    for (const k of ["brand", "address", "phone", "website", "hours", "mall"]) if (x[k] && !hit[k]) hit[k] = x[k];
+    if (x.area_conf === "от източника") Object.assign(hit, { area: x.area, area_conf: x.area_conf, area_err: x.area_err, area_note: x.area_note });
+  }
+  return [added, matched];
+}
+
+/* =====================================================================
+   CSV
+   ===================================================================== */
+function parseCSV(text) {
+  text = text.replace(/^﻿/, "");
+  const sep = (text.split("\n")[0].match(/;/g) || []).length > (text.split("\n")[0].match(/,/g) || []).length ? ";" : ",";
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === sep) { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  const head = (rows.shift() || []).map((h) => h.trim().toLowerCase());
+  return rows.filter((r) => r.some((x) => x.trim())).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] || "").trim()])));
+}
+const csvCell = (v) => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const LABEL_TO_CAT = Object.fromEntries(Object.entries(CATEGORIES).map(([k, v]) => [v.label.toLowerCase(), k]));
+const COL = { name: ["name", "име"], brand: ["brand", "марка"], category: ["category", "бранш"], lat: ["lat", "ширина"], lon: ["lon", "lng", "дължина"],
+  address: ["address", "адрес"], phone: ["phone", "телефон"], website: ["website", "сайт"], hours: ["hours", "работно време"], mall: ["mall", "мол"],
+  area_m2: ["area_m2", "площ м²", "площ"], source: ["source", "източник", "източници"] };
+const pick = (row, k) => { for (const c of COL[k]) if (row[c] !== undefined && row[c] !== "") return row[c]; return ""; };
+
+function csvToRecords(rows, srcName, bbox) {
+  const out = []; let skipped = 0;
+  rows.forEach((row, i) => {
+    const lat = parseFloat(pick(row, "lat").replace(",", ".")), lon = parseFloat(pick(row, "lon").replace(",", "."));
+    let cat = pick(row, "category"); cat = CATEGORIES[cat] ? cat : LABEL_TO_CAT[cat.toLowerCase()];
+    if (!isFinite(lat) || !isFinite(lon) || !cat || lat < bbox[0] || lat > bbox[2] || lon < bbox[1] || lon > bbox[3]) { skipped++; return; }
+    const a = parseFloat(pick(row, "area_m2").replace(",", ".")), typ = CATEGORIES[cat].size[1];
+    out.push({ id: `csv:${srcName}:${i}`, name: pick(row, "name") || "(без име)", brand: pick(row, "brand"), cat, lat, lon,
+      address: pick(row, "address"), phone: pick(row, "phone"), website: pick(row, "website"), hours: pick(row, "hours"), mall: pick(row, "mall"),
+      area: a > 0 ? Math.round(a) : typ, area_conf: a > 0 ? "от източника" : "типична", area_err: a > 0 ? 0.1 : 0.5,
+      area_note: a > 0 ? `площ от ${srcName}` : "типична площ за бранша", sources: [pick(row, "source") || srcName], osm_url: "" });
+  });
+  return [out, skipped];
+}
+function exportCSV(a) {
+  const head = ["име", "марка", "бранш", "lat", "lon", "адрес", "телефон", "сайт", "работно време", "мол", "площ м²", "точност на площта", "източници"];
+  const lines = [head.join(",")].concat(a.shops.map((r) => [r.name, r.brand, CATEGORIES[r.cat].label, r.lat, r.lon, r.address, r.phone, r.website, r.hours, r.mall, r.area, r.area_conf, r.sources.join(" + ")].map(csvCell).join(",")));
+  return "﻿" + lines.join("\r\n");
+}
+
+/* =====================================================================
+   САЙТОВЕ НА ОБЕКТИТЕ (по желание, през proxy.php на твоя хостинг)
+   ===================================================================== */
+function readLD(html) {
+  const out = {}, doc = new DOMParser().parseFromString(html, "text/html");
+  out.title = (doc.querySelector("title")?.textContent || "").trim().slice(0, 150);
+  const found = [];
+  const walk = (o) => {
+    if (Array.isArray(o)) return o.forEach(walk);
+    if (!o || typeof o !== "object") return;
+    const ts = [].concat(o["@type"] || []);
+    if (ts.some((t) => typeof t === "string" && (t.endsWith("Store") || ["LocalBusiness", "BeautySalon", "HairSalon", "DaySpa", "NailSalon", "ShoppingCenter"].includes(t)))) found.push(o);
+    Object.values(o).forEach((v) => typeof v === "object" && walk(v));
+  };
+  doc.querySelectorAll('script[type="application/ld+json"]').forEach((s) => { try { walk(JSON.parse(s.textContent)); } catch (e) {} });
+  const ld = found[0];
+  if (ld) {
+    const ad = ld.address;
+    if (ad && typeof ad === "object") out.address = [ad.streetAddress, ad.addressLocality].filter(Boolean).join(", ");
+    if (ld.telephone) out.phone = String(ld.telephone);
+    if (ld.openingHours) out.hours = [].concat(ld.openingHours).join("; ");
+    const fs = ld.floorSize; if (fs && fs.value) out.floor = parseFloat(fs.value);
+  }
+  return out;
+}
+async function enrichArea(a, onStep) {
+  const { proxy, proxyKey } = DB.settings;
+  const urls = [...new Set(a.shops.map((s) => s.website).filter(Boolean))];
+  const info = {}; let done = 0;
+  const work = urls.slice(), worker = async () => {
+    while (work.length) {
+      const u = work.shift();
+      try {
+        const r = await fetch(`${proxy}?key=${encodeURIComponent(proxyKey)}&url=${encodeURIComponent(/^https?:/.test(u) ? u : "http://" + u)}`);
+        if (r.ok) info[u] = readLD(await r.text());
+      } catch (e) {}
+      onStep(`Проверени сайтове: ${++done} от ${urls.length}`);
+    }
+  };
+  await Promise.all(Array.from({ length: 5 }, worker));
+  let n = 0;
+  for (const s of a.shops) {
+    const i = info[s.website]; if (!i) continue;
+    n++; if (!s.sources.includes("Сайт")) s.sources.push("Сайт");
+    for (const k of ["address", "phone", "hours"]) if (i[k] && !s[k]) s[k] = i[k];
+    if (i.floor > 0) Object.assign(s, { area: Math.round(i.floor), area_conf: "от сайта", area_err: 0.1, area_note: "обявена площ в сайта" });
+  }
+  return n;
+}
+
+/* =====================================================================
+   ИНТЕРФЕЙС
+   ===================================================================== */
+const state = { area: DB.ui.area, cats: new Set(Object.keys(CATEGORIES)), brand: "", chains: false, inmall: false, showstay: false, sel: null, occ: DB.ui.occ || 0.8, busy: false };
+let map, shopLayer, stayLayer, mallLayer;
+
+function initMap() {
+  map = L.map("map", { preferCanvas: true }).setView([42.7, 25.3], 7);
+  // Подложки: Esri не изисква адрес на сайт, затова работи и когато страницата е отворена като файл.
+  // Ако една подложка не се зарежда, страницата минава автоматично на следващата.
+  const BASES = [
+    ["Карта (Esri)", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, className: "street-tiles", attribution: "&copy; Esri" }],
+    ["Карта (CARTO)", "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 20, subdomains: "abcd", className: "street-tiles", attribution: "&copy; OpenStreetMap &copy; CARTO" }],
+    ["Карта (Esri, светла)", "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", { maxZoom: 16, className: "street-tiles", attribution: "&copy; Esri" }],
+    ["Сателит", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "&copy; Esri, Maxar" }],
+  ].map(([name, url, opt]) => ({ name, layer: L.tileLayer(url, opt), ok: false, err: 0 }));
+  let current = null;
+  function useBase(i) {
+    if (current) map.removeLayer(current.layer);
+    current = BASES[i]; current.layer.addTo(map); current.layer.bringToBack();
+    try { DB.ui.base = i; persist(); } catch (e) {}
+  }
+  BASES.forEach((b, i) => {
+    b.layer.on("tileload", () => { b.ok = true; });
+    b.layer.on("tileerror", () => {
+      if (b.ok || current !== b || ++b.err < 3) return;
+      const next = BASES.findIndex((x, j) => j > i && !x.err);
+      if (next > -1) { useBase(next); toastMeta(`Подложката „${b.name}“ не се зарежда; минах на „${BASES[next].name}“.`); }
+      else toastMeta("Нито една подложка не се зарежда. Провери интернет връзката.");
+    });
+  });
+  const ctl = L.control.layers(Object.fromEntries(BASES.map((b) => [b.name, b.layer])), null, { position: "bottomleft" }).addTo(map);
+  map.on("baselayerchange", (e) => { current = BASES.find((b) => b.layer === e.layer); try { DB.ui.base = BASES.indexOf(current); persist(); } catch (x) {} });
+  useBase(Number.isInteger(DB.ui.base) && BASES[DB.ui.base] ? DB.ui.base : 0);
+  shopLayer = L.layerGroup().addTo(map); stayLayer = L.layerGroup(); mallLayer = L.layerGroup().addTo(map);
+}
+const A = () => DB.areas[state.area];
+const brandOf = (s) => s.brand || s.name;
+function chainCounts(shops) { const c = {}; shops.forEach((s) => { const b = brandOf(s); c[b] = (c[b] || 0) + 1; }); return c; }
+function filtered() {
+  const a = A(); if (!a) return [];
+  const counts = chainCounts(a.shops), q = state.brand.trim().toLowerCase();
+  return a.shops.filter((s) => state.cats.has(s.cat) && (!q || brandOf(s).toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+    && (!state.chains || counts[brandOf(s)] >= 2) && (!state.inmall || s.mall));
+}
+function saveUI() { DB.ui = Object.assign(DB.ui || {}, { area: state.area, occ: state.occ }); persist(); }
+
+function fillAreaSelect() {
+  const sel = $("area"); sel.innerHTML = "";
+  const ids = Object.keys(DB.areas);
+  if (!ids.length) sel.add(new Option("— няма зони —", ""));
+  ids.forEach((id) => sel.add(new Option(DB.areas[id].name, id)));
+  if (!DB.areas[state.area]) state.area = ids[0];
+  sel.value = state.area || "";
+  $("btnRefresh").disabled = !ids.length; $("btnExport").disabled = !ids.length; $("btnImport").disabled = !ids.length; $("btnNsi").disabled = !ids.length;
+  $("welcome").hidden = !!ids.length;
+}
+
+function loadArea(fit = true) {
+  fillAreaSelect();
+  shopLayer.clearLayers(); stayLayer.clearLayers(); mallLayer.clearLayers();
+  const a = A();
+  if (!a) { $("list").innerHTML = ""; $("cats").innerHTML = ""; $("analysis").innerHTML = ""; toastMeta(""); return; }
+  toastMeta(`събрано ${a.collected} · ${a.shops.length} обекта · ${a.other_shops} други магазина${memoryOnly ? " · без запис в браузъра" : ""}`);
+  if (fit) map.fitBounds([[a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]]);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  a.malls.forEach((m) => {
+    const lay = m.poly.length ? L.polygon(m.poly, { color: accent, weight: 1.5, fillOpacity: .08, dashArray: "4 3" }) : L.circleMarker([m.lat, m.lon], { radius: 9, color: accent, fill: false });
+    lay.bindTooltip(`${esc(m.name)}${m.area ? " · " + fmt(m.area) + " м² застроена площ" : ""}`).addTo(mallLayer);
+  });
+  a.stays.forEach((h) => L.circleMarker([h.lat, h.lon], { radius: Math.max(3, Math.min(10, Math.sqrt(h.beds) / 2)), color: "#888", weight: 1, fillColor: "#999", fillOpacity: .35 })
+    .bindTooltip(`${esc(h.name || h.type)} · ≈${fmt(h.beds)} легла (${esc(h.beds_how)})`).addTo(stayLayer));
+  $("brands").innerHTML = Object.entries(chainCounts(a.shops)).sort((x, y) => y[1] - x[1]).slice(0, 300).map(([b, n]) => `<option value="${esc(b)}">${n} обекта</option>`).join("");
+  renderCats(); render();
+}
+
+function renderCats() {
+  const per = {}; (A()?.shops || []).forEach((s) => per[s.cat] = (per[s.cat] || 0) + 1);
+  $("cats").innerHTML = Object.entries(CATEGORIES).map(([id, c]) => `<label class="cat"><input type="checkbox" id="cat-${id}" data-c="${id}" ${state.cats.has(id) ? "checked" : ""}><span class="dot" style="background:${c.color}"></span>${esc(c.label)}<span class="n">${per[id] || 0}</span></label>`).join("");
+  $("cats").querySelectorAll("input").forEach((i) => i.onchange = () => { i.checked ? state.cats.add(i.dataset.c) : state.cats.delete(i.dataset.c); render(); });
+}
+
+function render() {
+  const list = filtered();
+  shopLayer.clearLayers();
+  list.forEach((s) => L.circleMarker([s.lat, s.lon], { radius: 4 + Math.min(8, Math.sqrt(s.area) / 3), color: "#fff", weight: 1.2, fillColor: CATEGORIES[s.cat].color, fillOpacity: .9 })
+    .bindTooltip(esc(s.name)).on("click", () => select(s.id)).addTo(shopLayer));
+  const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name, "bg"));
+  $("list").innerHTML = sorted.length ? sorted.map((s) => `<div class="item${state.sel === s.id ? " on" : ""}" data-id="${esc(s.id)}" tabindex="0"><span class="dot" style="background:${CATEGORIES[s.cat].color}"></span><span class="t">${esc(s.name)}</span><span class="a">${fmt(s.area)} м²</span></div>`).join("")
+    : `<div class="empty">${A() ? emptyHint() : ""}</div>`;
+  $("list").querySelectorAll(".item").forEach((el) => { el.onclick = () => select(el.dataset.id, true); el.onkeydown = (e) => { if (e.key === "Enter") select(el.dataset.id, true); }; });
+  renderAnalysis(list);
+}
+
+function emptyHint() {
+  const off = [];
+  if (state.inmall) off.push("„Само в молове“");
+  if (state.chains) off.push("„Само вериги“");
+  if (state.brand) off.push("търсенето по марка");
+  if (!state.cats.size) return "Не е избран нито един бранш.";
+  return off.length ? `Няма обекти по тези филтри. Опитай без ${off.join(" и ")}.` : "Няма обекти в избраните браншове.";
+}
+
+function select(id, fly) {
+  const s = A().shops.find((x) => x.id === id); if (!s) return;
+  state.sel = id;
+  document.querySelectorAll(".item").forEach((el) => el.classList.toggle("on", el.dataset.id === id));
+  if (fly) map.setView([s.lat, s.lon], Math.max(map.getZoom(), 17));
+  const lo = s.area * (1 - s.area_err), hi = s.area * (1 + s.area_err);
+  const web = s.website ? `<a href="${esc(/^https?:/.test(s.website) ? s.website : "http://" + s.website)}" target="_blank" rel="noopener">${esc(s.website.replace(/^https?:\/\//, ""))}</a>` : "";
+  $("detail").innerHTML = `<button class="close" aria-label="Затвори" id="dclose">×</button>
+    <h3>${esc(s.name)}</h3>
+    <div><span class="pill" style="border-color:${CATEGORIES[s.cat].color}">${esc(CATEGORIES[s.cat].label)}</span>${s.mall ? `<span class="pill">в ${esc(s.mall)}</span>` : ""}</div>
+    <dl class="kv">
+      <dt>Площ</dt><dd class="tabnum">≈ ${fmt(s.area)} м² <span class="meta">(${fmt(lo)}–${fmt(hi)})</span><br><span class="pill ${s.area_conf === "типична" ? "t" : "m"}">${esc(s.area_conf)}</span> <span class="meta">${esc(s.area_note)}</span></dd>
+      ${s.brand ? `<dt>Марка</dt><dd>${esc(s.brand)}</dd>` : ""}
+      ${s.address ? `<dt>Адрес</dt><dd>${esc(s.address)}</dd>` : ""}
+      ${s.phone ? `<dt>Телефон</dt><dd>${esc(s.phone)}</dd>` : ""}
+      ${s.hours ? `<dt>Работно време</dt><dd>${esc(s.hours)}</dd>` : ""}
+      ${web ? `<dt>Сайт</dt><dd>${web}</dd>` : ""}
+      <dt>Източници</dt><dd>${s.sources.map(esc).join(" + ")}${s.osm_url ? ` · <a href="${esc(s.osm_url)}" target="_blank" rel="noopener">виж в OSM</a>` : ""}</dd>
+      <dt>Координати</dt><dd class="tabnum">${s.lat}, ${s.lon}</dd>
+    </dl>`;
+  $("detail").hidden = false;
+  $("dclose").onclick = () => { $("detail").hidden = true; state.sel = null; document.querySelectorAll(".item.on").forEach((e) => e.classList.remove("on")); };
+}
+
+/* =====================================================================
+   ДАННИ ОТ НСИ (CSV файловете от папката „NSI — Черноморски курорти“)
+   Формат: ред = курорт, колона = „период / показател / мярка“, стойност
+   ===================================================================== */
+const ROMAN = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10, XI: 11, XII: 12 };
+const MONTHS = ["яну", "фев", "мар", "апр", "май", "юни", "юли", "авг", "сеп", "окт", "ное", "дек"];
+const MONTHS_FULL = ["януари", "февруари", "март", "април", "май", "юни", "юли", "август", "септември", "октомври", "ноември", "декември"];
+function nsiKey(ind) {
+  const s = ind.toLowerCase().trim();
+  if (s.includes("легладенонощия")) return "bedDays";
+  if (s.startsWith("легла")) return "beds";
+  if (s.startsWith("места за настаняване")) return "places";
+  const who = s.includes("българск") ? "_bg" : s.includes("чужд") ? "_fr" : "";
+  if (s.includes("приходи")) return "revenue" + who;
+  if (s.includes("пренощували")) return "persons" + who;
+  if (s.includes("нощувки")) return "nights" + who;
+  return null;
+}
+function nsiNum(v) {
+  const s = String(v ?? "").replace(/[\s ]/g, "").replace(",", ".");
+  return /^-?\d+(\.\d+)?$/.test(s) ? +s : null; // „-“, „..“ и празно остават без стойност (не са нула)
+}
+function parseNSI(text, fileName) {
+  const rows = parseCSV(text);
+  if (!rows.length) return { resorts: 0, values: 0 };
+  const keys = Object.keys(rows[0]);
+  const kRes = keys[0], kCol = keys.find((k) => k.includes("колона")) || keys[1], kVal = keys.find((k) => k.includes("стойност")) || keys[2];
+  const kSrc = keys.find((k) => k.includes("източник"));
+  // месеци или тримесечия: ако във файла има римско число над IV, периодите са месеци
+  const monthly = rows.some((r) => { const m = /^\d{4}([IVX]+)\s*\//.exec(r[kCol] || ""); return !!(m && ROMAN[m[1]] > 4); });
+  DB.nsi = DB.nsi || {};
+  let n = 0; const seen = new Set();
+  for (const r of rows) {
+    // „2012 / показател / мярка“ или „2008Q1 / мярка / показател“ — редът на частите не е еднакъв
+    const parts = String(r[kCol] || "").split(" / ").map((x) => x.trim());
+    if (parts.length < 2) continue;
+    const per = /^(\d{4})(?:Q([1-4])|([IVX]+))?$/.exec(parts[0]); if (!per) continue;
+    const rest = parts.slice(1), indIdx = rest.findIndex((x) => nsiKey(x));
+    if (indIdx < 0) continue;
+    const key = nsiKey(rest[indIdx]), unit = rest.filter((_, i) => i !== indIdx).join(" / ");
+    const val = nsiNum(r[kVal]); if (val === null) continue;
+    const resort = String(r[kRes] || "").trim(); if (!resort) continue;
+    const R = DB.nsi[resort] = DB.nsi[resort] || { annual: {}, monthly: {}, quarterly: {}, sources: [] };
+    const year = +per[1], isQ = !!per[2], sub = per[2] ? +per[2] : per[3] ? ROMAN[per[3]] : 0;
+    const bucket = !sub ? (R.annual[year] = R.annual[year] || {}) :
+      (monthly && !isQ) ? (R.monthly[`${year}-${String(sub).padStart(2, "0")}`] = R.monthly[`${year}-${String(sub).padStart(2, "0")}`] || {}) :
+      (R.quarterly[`${year}-Q${sub}`] = R.quarterly[`${year}-Q${sub}`] || {});
+    bucket[key] = val;
+    if (key.startsWith("revenue")) bucket.revenue_unit = unit;
+    const src = r[kSrc] ? String(r[kSrc]).split("?")[0] : "";
+    if (src && !R.sources.includes(src)) R.sources.push(src);
+    seen.add(resort); n++;
+  }
+  return { resorts: seen.size, values: n, names: [...seen] };
+}
+function nsiFor(a) { return a && a.nsiResort && DB.nsi && DB.nsi[a.nsiResort] ? DB.nsi[a.nsiResort] : null; }
+function guessResort(areaName) {
+  const names = Object.keys(DB.nsi || {}), x = norm(areaName);
+  return names.find((n) => { const y = norm(n); return y && (x.includes(y) || y.includes(x)); }) || "";
+}
+// обобщение за последната пълна година
+function nsiSummary(R) {
+  const years = Object.keys(R.annual).map(Number).filter((y) => R.annual[y].nights).sort((a, b) => a - b);
+  if (!years.length) return null;
+  const Y = years[years.length - 1], y = R.annual[Y];
+  const months = [];
+  for (let m = 1; m <= 12; m++) { const v = R.monthly[`${Y}-${String(m).padStart(2, "0")}`]; if (v && v.nights) months.push({ m, nights: v.nights }); }
+  const peak = months.length ? months.reduce((a, b) => (b.nights > a.nights ? b : a)) : null;
+  return {
+    years, Y, y,
+    occupancy: y.nights && y.bedDays ? y.nights / y.bedDays : null,
+    stay: y.nights && y.persons ? y.nights / y.persons : null,
+    peak, peakGuests: peak ? peak.nights / new Date(Y, peak.m, 0).getDate() : null,
+  };
+}
+const short = (n) => n >= 1e6 ? (n / 1e6).toLocaleString("bg-BG", { maximumFractionDigits: 1 }) + " млн" : n >= 1e4 ? Math.round(n / 1e3).toLocaleString("bg-BG") + " хил" : fmt(n);
+
+function barChart(items, label) {
+  if (!items.length) return "";
+  const max = Math.max(...items.map((d) => d.v)) || 1;
+  const step = 58, W = Math.max(320, items.length * step + 32), H = 190, base = H - 28, bw = 38;
+  const bars = items.map((d, i) => {
+    const x = 16 + i * step + (step - bw) / 2, h = (d.v / max) * (H - 64), y = base - h;
+    return `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="3" fill="${d.hi ? "var(--accent)" : "color-mix(in srgb, var(--accent) 55%, var(--chip))"}"><title>${esc(d.l)}: ${fmt(d.v)}</title></rect>
+      <text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle" font-size="10.5" fill="var(--fg)">${short(d.v)}</text>
+      <text x="${x + bw / 2}" y="${H - 10}" text-anchor="middle" font-size="11.5" fill="var(--muted)">${esc(d.l)}</text>`;
+  }).join("");
+  return `<div class="scroll"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><line x1="12" x2="${W - 12}" y1="${base}" y2="${base}" stroke="var(--line)"/>${bars}</svg></div>`;
+}
+
+function renderAnalysis(list) {
+  const a = A(); if (!a) { $("analysis").innerHTML = ""; return; }
+  a.tourism = a.tourism || [];
+  const R = nsiFor(a), S = R ? nsiSummary(R) : null;
+  const total = list.reduce((t, s) => t + s.area, 0);
+  const lo = list.reduce((t, s) => t + s.area * (1 - s.area_err), 0), hi = list.reduce((t, s) => t + s.area * (1 + s.area_err), 0);
+  const osmBeds = a.stays.reduce((t, h) => t + h.beds, 0);
+  const useNsi = !!(S && S.peakGuests);
+  const peak = useNsi ? S.peakGuests : osmBeds * state.occ, perShop = list.length ? peak / list.length : 0;
+  const rows = Object.keys(CATEGORIES).filter((c) => state.cats.has(c)).map((c) => {
+    const xs = list.filter((s) => s.cat === c), ar = xs.reduce((t, s) => t + s.area, 0), q = { m: 0, b: 0, t: 0 };
+    xs.forEach((s) => s.area_conf === "типична" ? q.t++ : s.area_conf === "по сграда" ? q.b++ : q.m++);
+    return { c, n: xs.length, ar, avg: xs.length ? ar / xs.length : 0, q };
+  }).filter((r) => r.n);
+  const brands = Object.entries(chainCounts(list)).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1]).slice(0, 10);
+
+  const bedsTile = S && S.y.beds
+    ? `<div class="tile"><div class="l">Легла в зоната</div><div class="v">${fmt(S.y.beds)}</div><div class="s">НСИ ${S.Y}, ${fmt(S.y.places || 0)} места · OSM оценка ≈ ${fmt(osmBeds)}</div></div>`
+    : `<div class="tile"><div class="l">Легла в зоната</div><div class="v">≈ ${fmt(osmBeds)}</div><div class="s">оценка от OSM, ${fmt(a.stays.length)} места за настаняване</div></div>`;
+  const peakTile = useNsi
+    ? `<div class="tile"><div class="l">Гости на нощ, пик</div><div class="v">${fmt(peak)}</div><div class="s">средно през ${MONTHS_FULL[S.peak.m - 1]} ${S.Y}, по нощувки от НСИ</div></div>`
+    : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост ${Math.round(state.occ * 100)}%</label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
+
+  $("analysis").innerHTML = `
+    <div class="tiles">
+      <div class="tile"><div class="l">Обекти</div><div class="v">${fmt(list.length)}</div><div class="s">от ${fmt(a.shops.length)} в зоната</div></div>
+      <div class="tile"><div class="l">Обща търговска площ</div><div class="v">≈ ${fmt(total)} м²</div><div class="s tabnum">диапазон ${fmt(lo)}–${fmt(hi)} м²</div></div>
+      <div class="tile"><div class="l">Средна площ</div><div class="v">${fmt(list.length ? total / list.length : 0)} м²</div><div class="s">на обект</div></div>
+      ${bedsTile}${peakTile}
+      <div class="tile"><div class="l">Гости на обект</div><div class="v">≈ ${fmt(perShop)}</div><div class="s">на нощ в пика, за избраните браншове</div></div>
+    </div>
+    <div class="cols">
+      <div class="card"><h2>По бранш</h2><div class="scroll"><table>
+        <thead><tr><th>Бранш</th><th>Обекти</th><th>Площ м²</th><th>Средно м²</th><th>Точност на площта</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td><span class="dot" style="background:${CATEGORIES[r.c].color};margin-right:6px"></span>${esc(CATEGORIES[r.c].label)}</td><td>${r.n}</td><td>${fmt(r.ar)}</td><td>${fmt(r.avg)}</td>
+          <td><div class="bar" title="измерена ${r.q.m} · по сграда ${r.q.b} · типична ${r.q.t}"><i style="width:${r.q.m / r.n * 100}%;background:var(--accent)"></i><i style="width:${r.q.b / r.n * 100}%;background:color-mix(in srgb, var(--accent) 45%, var(--chip))"></i><i style="width:${r.q.t / r.n * 100}%;background:var(--warn);opacity:.55"></i></div></td></tr>`).join("") || '<tr><td colspan="5">Няма обекти.</td></tr>'}</tbody>
+      </table></div>
+      <p class="note">Точност: тъмно — площта е измерена от контура на обекта; светло — изведена от сградата; оранжево — типична площ за бранша (най-груба оценка).</p></div>
+      <div class="card"><h2>Вериги в избора</h2>${brands.length ? `<table><tbody>${brands.map(([b, n]) => `<tr><td>${esc(b)}</td><td>${n}</td></tr>`).join("")}</tbody></table>` : '<p class="note">Няма марки с 2+ обекта в избора.</p>'}</div>
+    </div>
+    ${R ? nsiCard(a, R, S) : manualCard(a)}`;
+
+  if ($("occ")) $("occ").oninput = (e) => { state.occ = +e.target.value; saveUI(); renderAnalysis(filtered()); };
+  if ($("nsiYear")) $("nsiYear").onchange = (e) => { state.nsiYear = +e.target.value; renderAnalysis(filtered()); };
+  if ($("nsiOpen")) $("nsiOpen").onclick = nsiDialog;
+  if ($("tAdd")) {
+    $("tAdd").onclick = () => {
+      const y = parseInt($("tYear").value, 10), n = parseInt($("tNights").value, 10) || 0, p = parseInt($("tArr").value, 10) || 0;
+      if (!y || (!n && !p)) { $("tYear").focus(); return; }
+      a.tourism = a.tourism.filter((r) => r.year !== y).concat({ year: y, nights: n, arrivals: p, source: $("tSrc").value.trim() });
+      persist(); renderAnalysis(filtered());
+    };
+    $("ttab").querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { a.tourism.sort((x, y) => x.year - y.year).splice(+b.dataset.del, 1); persist(); renderAnalysis(filtered()); });
+  }
+}
+
+function nsiCard(a, R, S) {
+  if (!S) return `<div class="card"><h2>НСИ · ${esc(a.nsiResort)}</h2><p class="note">Във файловете няма годишни нощувки за този курорт.</p></div>`;
+  const yearsBars = S.years.map((y) => ({ l: String(y), v: R.annual[y].nights, hi: y === S.Y }));
+  const mYears = [...new Set(Object.keys(R.monthly).map((k) => +k.slice(0, 4)))].sort((a, b) => b - a);
+  const qYears = [...new Set(Object.keys(R.quarterly).map((k) => +k.slice(0, 4)))].sort((a, b) => b - a);
+  const allSub = [...mYears, ...qYears.filter((y) => !mYears.includes(y))].sort((a, b) => b - a);
+  const sy = allSub.includes(state.nsiYear) ? state.nsiYear : (allSub.includes(S.Y) ? S.Y : allSub[0]);
+  let subBars = [];
+  if (mYears.includes(sy)) { for (let m = 1; m <= 12; m++) { const v = R.monthly[`${sy}-${String(m).padStart(2, "0")}`]; if (v && v.nights) subBars.push({ l: MONTHS[m - 1], v: v.nights, hi: false }); } }
+  else for (let q = 1; q <= 4; q++) { const v = R.quarterly[`${sy}-Q${q}`]; if (v && v.nights) subBars.push({ l: `Q${q}`, v: v.nights, hi: false }); }
+  if (subBars.length) { const mx = Math.max(...subBars.map((b) => b.v)); subBars.forEach((b) => b.hi = b.v === mx); }
+  const y = S.y, rev = y.revenue != null ? `${short(y.revenue)} ${esc(y.revenue_unit || "")}` : "—";
+  const tableYears = [...S.years].reverse();
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:baseline"><h2 style="margin:0">НСИ · ${esc(a.nsiResort)}</h2><button class="linkbtn" id="nsiOpen">смени или обнови данните</button></div>
+    <div class="tiles" style="margin-top:12px">
+      <div class="tile"><div class="l">Пренощували ${S.Y}</div><div class="v">${y.persons ? fmt(y.persons) : "—"}</div><div class="s">${y.persons_fr && y.persons ? `${Math.round(y.persons_fr / y.persons * 100)}% чужденци` : "души"}</div></div>
+      <div class="tile"><div class="l">Нощувки ${S.Y}</div><div class="v">${fmt(y.nights)}</div><div class="s">${S.stay ? `средно ${S.stay.toLocaleString("bg-BG", { maximumFractionDigits: 1 })} нощи на човек` : ""}</div></div>
+      <div class="tile"><div class="l">Заетост на леглата</div><div class="v">${S.occupancy ? Math.round(S.occupancy * 100) + "%" : "—"}</div><div class="s">нощувки ÷ легладенонощия</div></div>
+      <div class="tile"><div class="l">Приходи от нощувки</div><div class="v">${rev}</div><div class="s">${S.Y}</div></div>
+    </div>
+    <h2 style="margin-top:16px">Нощувки по години</h2>${barChart(yearsBars, "Нощувки по години")}
+    ${subBars.length ? `<div class="row" style="margin-top:10px"><h2 style="margin:0">${mYears.includes(sy) ? "По месеци" : "По тримесечия"}</h2>
+      <select id="nsiYear" aria-label="Година">${allSub.map((yy) => `<option value="${yy}" ${yy === sy ? "selected" : ""}>${yy}</option>`).join("")}</select></div>${barChart(subBars, "Нощувки по период")}` : ""}
+    <details style="margin-top:8px"><summary class="meta" style="cursor:pointer">Таблица по години</summary>
+      <div class="scroll"><table><thead><tr><th>Година</th><th>Пренощували</th><th>Нощувки</th><th>Легла</th><th>Места</th><th>Заетост</th><th>Приходи</th></tr></thead>
+      <tbody>${tableYears.map((yy) => { const d = R.annual[yy]; return `<tr><td>${yy}</td><td>${d.persons != null ? fmt(d.persons) : "—"}</td><td>${d.nights != null ? fmt(d.nights) : "—"}</td><td>${d.beds != null ? fmt(d.beds) : "—"}</td><td>${d.places != null ? fmt(d.places) : "—"}</td><td>${d.nights && d.bedDays ? Math.round(d.nights / d.bedDays * 100) + "%" : "—"}</td><td>${d.revenue != null ? fmt(d.revenue) + " " + esc(d.revenue_unit || "") : "—"}</td></tr>`; }).join("")}</tbody></table></div></details>
+    <p class="note">Източник: НСИ, данни за курортните комплекси (${R.sources.slice(0, 3).map((s) => `<a href="${esc(s)}" target="_blank" rel="noopener">${esc(s.replace(/^https?:\/\//, ""))}</a>`).join(", ")}). Границите на курорта в НСИ не съвпадат точно с правоъгълника на картата. НСИ отчита регистрираните места за настаняване, не всички посетители; еднодневните гости и частните квартири не влизат. „Гости на нощ, пик“ = нощувките в най-силния месец ÷ дните в месеца.</p>
+  </div>`;
+}
+
+function manualCard(a) {
+  const tr = [...a.tourism].sort((x, y) => x.year - y.year);
+  return `<div class="card"><div class="row" style="justify-content:space-between;align-items:baseline"><h2 style="margin:0">Туристи по години · ${esc(a.name)}</h2><button class="linkbtn" id="nsiOpen">зареди данни от НСИ</button></div>
+      ${tr.length ? barChart(tr.map((r) => ({ l: String(r.year), v: r.nights || r.arrivals || 0, hi: false })), "Туристи по години") : '<p class="note">Още няма данни. Зареди CSV файловете от НСИ или добави числа ред по ред.</p>'}
+      <div class="scroll"><table id="ttab"><thead><tr><th>Година</th><th>Нощувки</th><th>Пристигнали</th><th style="text-align:left">Източник</th><th></th></tr></thead>
+        <tbody>${tr.map((r, i) => `<tr><td>${esc(r.year)}</td><td>${r.nights ? fmt(r.nights) : "—"}</td><td>${r.arrivals ? fmt(r.arrivals) : "—"}</td><td style="text-align:left">${esc(r.source)}</td><td><button class="linkbtn" data-del="${i}">изтрий</button></td></tr>`).join("")}
+        <tr><td><input type="number" id="tYear" placeholder="2025" min="1990" max="2100"></td><td><input type="number" id="tNights" placeholder="нощувки"></td><td><input type="number" id="tArr" placeholder="пристигнали"></td><td><input type="text" id="tSrc" placeholder="НСИ"></td><td><button class="btn" id="tAdd">Добави</button></td></tr></tbody></table></div>
+      <p class="note">„Гости в пиков ден“ = легла × заетост. Леглата идват от OSM, а където липсват, са изчислени от стаите или от размера на сградата. Това е оценка на капацитета, не броене на посетители.</p></div>`;
+}
+
+function nsiDialog() {
+  const a = A(); if (!a) return;
+  const opts = () => Object.keys(DB.nsi || {}).sort((x, y) => x.localeCompare(y, "bg"));
+  const draw = () => {
+    const names = opts(), cur = a.nsiResort || guessResort(a.name);
+    $("nsiBody").innerHTML = names.length
+      ? `<div class="field"><label for="nsiPick">Курорт от НСИ за зоната „${esc(a.name)}“</label>
+          <select id="nsiPick"><option value="">— без данни от НСИ —</option>${names.map((n) => `<option ${n === cur ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+         <div class="row" style="justify-content:flex-end"><button class="btn primary" id="nsiSave">Свържи</button></div>`
+      : '<p class="hint">Още не са заредени файлове.</p>';
+    if ($("nsiSave")) $("nsiSave").onclick = () => { a.nsiResort = $("nsiPick").value; state.nsiYear = null; persist(); closeModal(); renderAnalysis(filtered()); };
+  };
+  openModal(`<h3>Данни от НСИ</h3>
+    <p class="hint">Изтегли от Google Drive, папка <b>AI raboten / Belbin team / NSI — Черноморски курорти</b>, файловете <b>NSI_resorts_2012-2026.csv</b> и <b>NSI_resorts_2008-2011.csv</b>. После ги избери тук, двата наведнъж. Данните се запазват за всички зони; при нова версия просто ги зареди пак.</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="nsiPickFiles">Избери CSV файлове от НСИ</button></div>
+    <div id="nsiRes"></div><div id="nsiBody" style="margin-top:10px"></div>`, () => {
+    $("nsiPickFiles").onclick = () => $("fileNsi").click();
+    draw();
+    $("fileNsi").onchange = async (e) => {
+      const files = [...e.target.files]; e.target.value = ""; if (!files.length) return;
+      $("nsiRes").innerHTML = '<p class="hint">Четене…</p>';
+      const out = [];
+      for (const f of files) { const r = parseNSI(await f.text(), f.name); out.push(`${esc(f.name)}: ${fmt(r.values)} стойности за ${r.resorts} курорта`); }
+      for (const ar of Object.values(DB.areas)) if (!ar.nsiResort) ar.nsiResort = guessResort(ar.name); // свързва зоните по име
+      persist();
+      $("nsiRes").innerHTML = `<p class="ok">${out.join("<br>")}</p>`;
+      renderAnalysis(filtered());
+      draw();
+    };
+  });
+}
+
+/* =====================================================================
+   СЪБИРАНЕ: поток с напредък
+   ===================================================================== */
+function progress(t) { $("progress").hidden = !t; if (t) $("progressText").textContent = t; }
+async function collect(id, name, bbox) {
+  if (state.busy) return; state.busy = true;
+  document.querySelectorAll("header .btn").forEach((b) => b.disabled = true);
+  $("welcome").hidden = true;
+  try {
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]]);
+    const osm = await fetchOverpass(bbox, progress);
+    const res = processOsm(osm, bbox);
+    const prev = DB.areas[id];
+    // запазва ръчно добавените (CSV) обекти и туристическите данни при обновяване
+    if (prev) mergeInto(res.shops, prev.shops.filter((s) => !s.id.startsWith("osm:")).map((s) => Object.assign({}, s, { sources: [...s.sources] })));
+    DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [] }, res);
+    if (DB.settings.proxy && DB.settings.proxyKey) { progress("Проверка на сайтовете…"); await enrichArea(DB.areas[id], progress); }
+    state.area = id; saveUI(); persist();
+    progress(""); loadArea();
+    toastMeta(`${name}: ${res.shops.length} обекта в браншовете, ${res.stays.length} места за настаняване`);
+  } catch (e) {
+    progress(""); toastMeta(e.message); if (!Object.keys(DB.areas).length) $("welcome").hidden = false;
+  } finally {
+    state.busy = false; fillAreaSelect(); $("btnNew").disabled = false; $("btnSettings").disabled = false;
+  }
+}
+
+/* =====================================================================
+   ДИАЛОЗИ
+   ===================================================================== */
+function openModal(html, onReady) {
+  $("dialog").innerHTML = `<button class="close" aria-label="Затвори" data-close>×</button>` + html;
+  $("modal").hidden = false;
+  $("dialog").querySelectorAll("[data-close]").forEach((b) => b.onclick = closeModal);
+  onReady && onReady();
+}
+function closeModal() { $("modal").hidden = true; }
+$("modal").onclick = (e) => { if (e.target === $("modal")) closeModal(); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("modal").hidden) closeModal(); });
+
+function newAreaDialog() {
+  openModal(`<h3>Нова зона</h3>
+    <div class="tabs"><button class="on" data-t="p">Готова зона</button><button data-t="s">Търси място</button><button data-t="v">Текущият изглед на картата</button></div>
+    <div data-p="p"><div class="field"><label for="nPreset">Зона</label><select id="nPreset">${Object.entries(PRESETS).map(([k, v]) => `<option value="${k}">${esc(v[0])}</option>`).join("")}</select></div></div>
+    <div data-p="s" hidden><div class="field"><label for="nPlace">Град, село или курорт в България</label><div class="row"><input type="text" id="nPlace" placeholder="напр. Варна" style="flex:1"><button class="btn" id="nFind">Намери</button></div></div><div id="nFound" class="hint"></div></div>
+    <div data-p="v" hidden><p class="hint">Приближи картата до мястото, което те интересува, и събери всичко, което се вижда в момента.</p>
+      <div class="field"><label for="nViewName">Име на зоната</label><input type="text" id="nViewName" placeholder="напр. Мол Галерия Бургас"></div></div>
+    <div id="nErr" class="err"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:6px"><button class="btn" data-close>Отказ</button><button class="btn primary" id="nGo">Събери данните</button></div>`, () => {
+    let tab = "p", found = null;
+    $("dialog").querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+      tab = b.dataset.t; $("dialog").querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+      $("dialog").querySelectorAll("[data-p]").forEach((p) => p.hidden = p.dataset.p !== tab);
+    });
+    const find = async () => {
+      const q = $("nPlace").value.trim(); if (!q) return;
+      $("nFound").textContent = "Търсене…"; found = null;
+      try {
+        const r = await fetch("https://nominatim.openstreetmap.org/search?" + new URLSearchParams({ q, format: "json", limit: 1, countrycodes: "bg", "accept-language": "bg" }));
+        const j = await r.json();
+        if (!j.length) { $("nFound").textContent = "Не намирам такова място."; return; }
+        const [s, n, w, e] = j[0].boundingbox.map(Number);
+        found = { name: q, bbox: [s, w, n, e] };
+        $("nFound").textContent = "Намерено: " + j[0].display_name;
+        map.fitBounds([[s, w], [n, e]]);
+      } catch (e) { $("nFound").textContent = "Търсенето не успя. Провери връзката."; }
+    };
+    $("nFind").onclick = find; $("nPlace").onkeydown = (e) => { if (e.key === "Enter") find(); };
+    $("nGo").onclick = () => {
+      let id, name, bbox;
+      if (tab === "p") { id = $("nPreset").value; [name, bbox] = PRESETS[id]; }
+      else if (tab === "s") { if (!found) { $("nErr").textContent = "Първо намери мястото."; return; } name = found.name; id = slug(name); bbox = found.bbox; }
+      else { const b = map.getBounds(); bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => +x.toFixed(5)); name = $("nViewName").value.trim() || "Моята зона"; id = slug(name); }
+      if ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) > MAX_AREA_DEG2) { $("nErr").textContent = "Зоната е твърде голяма. Избери по-малка част (до около 25 × 25 км)."; return; }
+      closeModal(); collect(id, name, bbox);
+    };
+  });
+}
+
+function importDialog() {
+  openModal(`<h3>Импорт на обекти от CSV</h3>
+    <p class="hint">Добави обекти от всякакъв друг източник: списък на верига, справочник, обход на място. Обектите в зоната „${esc(A().name)}“ се обединяват с вече намерените.</p>
+    <p class="hint">Колони (на английски или български): <b>name</b>, <b>category</b>, <b>lat</b>, <b>lon</b>, и по желание brand, address, phone, website, hours, mall, area_m2, source. Категорията е име на бранш, например „Дрехи“.</p>
+    <div class="row" style="justify-content:space-between"><button class="linkbtn" id="iTpl">Свали празен шаблон</button><button class="btn primary" id="iPick">Избери CSV файл</button></div>
+    <div id="iRes"></div>`, () => {
+    $("iTpl").onclick = () => download("shablon-obekti.csv", "﻿name,brand,category,lat,lon,address,phone,website,hours,mall,area_m2,source\r\nПример магазин,Пример,Дрехи,42.6951,27.7101,,,,,,85,Обход\r\n", "text/csv");
+    $("iPick").onclick = () => $("fileCsv").click();
+  });
+}
+$("fileCsv").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  const a = A(), src = f.name.replace(/\.csv$/i, "");
+  const [recs, skipped] = csvToRecords(parseCSV(await f.text()), src, a.bbox);
+  const [added, matched] = mergeInto(a.shops, recs);
+  persist(); loadArea(false);
+  if ($("iRes")) $("iRes").innerHTML = `<p class="ok">Прочетени ${recs.length + skipped} реда: ${added} нови обекта, ${matched} съвпаднаха с вече намерени.${skipped ? ` ${skipped} реда пропуснати (липсват координати или бранш, или са извън зоната).` : ""}</p>`;
+};
+
+function exportDialog() {
+  openModal(`<h3>Експорт</h3>
+    <div style="display:grid;gap:10px">
+      <button class="btn" id="eCsv">Таблица за Excel (CSV) — само „${esc(A().name)}“</button>
+      <button class="btn" id="eJson">Резервно копие на всички зони (JSON)</button>
+      <button class="btn" id="eLoad">Зареди резервно копие</button>
+    </div>
+    <p class="hint" style="margin-top:12px">Данните се пазят в този браузър. Резервното копие ги пренася на друг компютър или браузър.</p>
+    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+    <button class="linkbtn" id="eDel" style="color:var(--bad)">Изтрий зоната „${esc(A().name)}“</button>
+    <div id="eConfirm"></div>`, () => {
+    $("eCsv").onclick = () => download(`${state.area}.csv`, exportCSV(A()), "text/csv");
+    $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(DB), "application/json");
+    $("eLoad").onclick = () => $("fileJson").click();
+    $("eDel").onclick = () => {
+      $("eConfirm").innerHTML = `<p class="err">Сигурен ли си? Ще се изтрият и импортираните обекти и туристическите данни за зоната.</p><button class="btn" id="eYes">Да, изтрий</button>`;
+      $("eYes").onclick = () => { delete DB.areas[state.area]; state.area = Object.keys(DB.areas)[0]; saveUI(); persist(); closeModal(); loadArea(); };
+    };
+  });
+}
+$("fileJson").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (!j.areas) throw new Error();
+    Object.assign(DB.areas, j.areas); if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, j.nsi); if (j.settings) DB.settings = Object.assign(DB.settings, j.settings);
+    persist(); closeModal(); loadArea();
+    toastMeta(`Заредени ${Object.keys(j.areas).length} зони от резервното копие.`);
+  } catch (err) { toastMeta("Файлът не е резервно копие от тази система."); }
+};
+
+function settingsDialog() {
+  const s = DB.settings;
+  openModal(`<h3>Настройки</h3>
+    <h2>Проверка на сайтовете на обектите</h2>
+    <p class="hint">Браузърът не може сам да чете чужди сайтове. Ако качиш файла <b>proxy.php</b> на свой хостинг, системата ще взима от сайтовете на обектите адрес, телефон, работно време и понякога площ. Без него всичко останало работи.</p>
+    <div class="field"><label for="sProxy">Адрес на proxy.php</label><input type="text" id="sProxy" placeholder="https://твоят-сайт.bg/obekti/proxy.php" value="${esc(s.proxy)}"></div>
+    <div class="field"><label for="sKey">Ключ (същият като в proxy.php)</label><input type="password" id="sKey" value="${esc(s.proxyKey)}"></div>
+    <div id="sRes"></div>
+    <div class="row" style="justify-content:space-between;margin-top:6px"><button class="btn" id="sTest">Провери връзката</button><span class="row"><button class="btn" data-close>Отказ</button><button class="btn primary" id="sSave">Запази</button></span></div>`, () => {
+    $("sTest").onclick = async () => {
+      $("sRes").innerHTML = '<p class="hint">Проверка…</p>';
+      try {
+        const r = await fetch(`${$("sProxy").value.trim()}?key=${encodeURIComponent($("sKey").value)}&url=${encodeURIComponent("https://www.openstreetmap.org/")}`);
+        $("sRes").innerHTML = r.ok ? '<p class="ok">Работи.</p>' : `<p class="err">Proxy-то отговори с грешка ${r.status}${r.status === 403 ? " (грешен ключ)" : ""}.</p>`;
+      } catch (e) { $("sRes").innerHTML = '<p class="err">Няма връзка с proxy.php. Провери адреса.</p>'; }
+    };
+    $("sSave").onclick = () => { s.proxy = $("sProxy").value.trim(); s.proxyKey = $("sKey").value; persist(); closeModal(); };
+  });
+}
+
+/* =====================================================================
+   СТАРТ
+   ===================================================================== */
+if (typeof L === "undefined") {
+  document.querySelector(".main").innerHTML = '<div class="empty" style="grid-column:1/-1">Картата не можа да се зареди. Нужна е интернет връзка.</div>';
+} else {
+  initMap();
+  $("area").onchange = () => { state.area = $("area").value; state.brand = ""; $("brand").value = ""; state.sel = null; $("detail").hidden = true; saveUI(); loadArea(); };
+  $("all").onclick = () => { state.cats = new Set(Object.keys(CATEGORIES)); renderCats(); render(); };
+  $("none").onclick = () => { state.cats.clear(); renderCats(); render(); };
+  $("brand").oninput = () => { state.brand = $("brand").value; render(); };
+  $("chains").onchange = () => { state.chains = $("chains").checked; render(); };
+  $("inmall").onchange = () => { state.inmall = $("inmall").checked; render(); };
+  $("showstay").onchange = () => { state.showstay = $("showstay").checked; state.showstay ? stayLayer.addTo(map) : map.removeLayer(stayLayer); };
+  state.chains = $("chains").checked; state.inmall = $("inmall").checked; state.showstay = $("showstay").checked;
+  if (state.showstay) stayLayer.addTo(map);
+  $("btnNew").onclick = newAreaDialog;
+  $("btnRefresh").onclick = () => { const a = A(); if (a) collect(state.area, a.name, a.bbox); };
+  $("btnImport").onclick = importDialog;
+  $("btnExport").onclick = exportDialog;
+  $("btnSettings").onclick = settingsDialog;
+  $("btnNsi").onclick = nsiDialog;
+  $("btnWelcome").onclick = () => collect("slanchev-bryag", ...PRESETS["slanchev-bryag"]);
+  loadArea();
+}
+</script>
+</body>
+</html>
