@@ -290,7 +290,7 @@ async function fetchOverpass(bbox, onStep) {
   const body = new URLSearchParams({ data: overpassQuery(bbox) });
   let last;
   for (let round = 0; round < 2; round++) {
-    for (const url of OVERPASS) {
+    for (const url of [DB.settings.overpass, ...OVERPASS].filter(Boolean)) {
       try {
         onStep(`Свързване с ${new URL(url).host}…`);
         const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 200000);
@@ -353,12 +353,15 @@ function processOsm(osm, bbox) {
     const hits = bIdx.find(s.lat, s.lon);
     if (hits.length) {
       const b = hits.reduce((x, y) => (y.area < x.area ? y : x)), n = Math.max(1, b.shops), bt = b.t.building || "yes";
-      let share = b.area / n, note;
-      if (RETAIL.has(bt) || mIdx.find(s.lat, s.lon).length) { share = b.area * levels(b.t, 1) / n; note = `търговска сграда ${fmt(b.area)} м², ${n} обекта в нея`; }
-      else if (b.area <= 250 && n === 1) note = `самостоятелна малка сграда ${fmt(b.area)} м²`;
-      else if (share < typ) note = `сграда ${fmt(b.area)} м², поделена на ${n} обекта`;
-      else return [typ, "типична", 0.5, `партер на по-голяма сграда (${bt}); типична площ за бранша`];
-      return [Math.round(Math.min(Math.max(share, lo), hi)), "по сграда", 0.35, note];
+      const inMall = mIdx.find(s.lat, s.lon).length > 0, retail = RETAIL.has(bt);
+      const share = (retail || inMall ? b.area * levels(b.t, 1) : b.area) / n;
+      // Самостоятелна търговска сграда с един обект (не в мол): площта на сградата е площта на обекта.
+      if (!inMall && n === 1 && (retail || b.area <= 250) && share <= hi)
+        return [Math.round(Math.max(share, lo)), "по сграда", 0.35, `самостоятелна сграда ${fmt(b.area)} м²`];
+      // Иначе делението на броя познати обекти надува площта, когато OSM не знае всички обекти в сградата,
+      // затова „по сграда“ може само да намали типичната площ, никога да я увеличи.
+      if (share < typ) return [Math.round(Math.max(share, lo)), "по сграда", 0.35, `сграда ${fmt(b.area)} м², поделена на ${n} познати обекта`];
+      return [typ, "типична", 0.5, `сградата (${fmt(b.area)} м², ${n} познати обекта) не стига за по-точна оценка; приета е типичната площ за бранша`];
     }
     return [typ, "типична", 0.5, "няма данни за сградата; типична площ за бранша"];
   }
@@ -381,7 +384,7 @@ function processOsm(osm, bbox) {
       lat: +s.lat.toFixed(6), lon: +s.lon.toFixed(6), address: addressOf(t),
       phone: t.phone || t["contact:phone"] || "", website: t.website || t["contact:website"] || t["brand:website"] || "",
       hours: t.opening_hours || "", mall: m.length ? m[0].name : "",
-      area, area_conf: conf, area_err: err, area_note: note, sources: ["OpenStreetMap"],
+      area, area_conf: conf, area_err: err, area_note: note, area_model: area, area_method: conf, sources: ["OpenStreetMap"],
       osm_url: `https://www.openstreetmap.org/${s.el.type}/${s.el.id}`,
     };
   });
@@ -524,10 +527,11 @@ function initMap() {
   // Подложки: Esri не изисква адрес на сайт, затова работи и когато страницата е отворена като файл.
   // Ако една подложка не се зарежда, страницата минава автоматично на следващата.
   const BASES = [
-    ["Карта (Esri)", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, className: "street-tiles", attribution: "&copy; Esri" }],
+    ...(DB.settings.tileUrl ? [["Моята карта", DB.settings.tileUrl, { maxZoom: 20, className: "street-tiles", attribution: esc(DB.settings.tileAttr || "") }]] : []),
+    ["Карта (Esri)", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, className: "street-tiles", attribution: "Powered by Esri · &copy; Esri, HERE, Garmin, OpenStreetMap" }],
     ["Карта (CARTO)", "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 20, subdomains: "abcd", className: "street-tiles", attribution: "&copy; OpenStreetMap &copy; CARTO" }],
-    ["Карта (Esri, светла)", "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", { maxZoom: 16, className: "street-tiles", attribution: "&copy; Esri" }],
-    ["Сателит", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "&copy; Esri, Maxar" }],
+    ["Карта (Esri, светла)", "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", { maxZoom: 16, className: "street-tiles", attribution: "Powered by Esri · &copy; Esri, HERE, Garmin, OpenStreetMap" }],
+    ["Сателит", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "Powered by Esri · &copy; Esri, Maxar, Earthstar Geographics" }],
   ].map(([name, url, opt]) => ({ name, layer: L.tileLayer(url, opt), ok: false, err: 0 }));
   let current = null;
   function useBase(i) {
@@ -546,7 +550,7 @@ function initMap() {
   });
   const ctl = L.control.layers(Object.fromEntries(BASES.map((b) => [b.name, b.layer])), null, { position: "bottomleft" }).addTo(map);
   map.on("baselayerchange", (e) => { current = BASES.find((b) => b.layer === e.layer); try { DB.ui.base = BASES.indexOf(current); persist(); } catch (x) {} });
-  useBase(Number.isInteger(DB.ui.base) && BASES[DB.ui.base] ? DB.ui.base : 0);
+  useBase(DB.settings.tileUrl ? 0 : Number.isInteger(DB.ui.base) && BASES[DB.ui.base] ? DB.ui.base : 0);
   shopLayer = L.layerGroup().addTo(map); stayLayer = L.layerGroup(); mallLayer = L.layerGroup().addTo(map);
 }
 const A = () => DB.areas[state.area];
@@ -621,13 +625,15 @@ function select(id, fly) {
   state.sel = id;
   document.querySelectorAll(".item").forEach((el) => el.classList.toggle("on", el.dataset.id === id));
   if (fly) map.setView([s.lat, s.lon], Math.max(map.getZoom(), 17));
-  const lo = s.area * (1 - s.area_err), hi = s.area * (1 + s.area_err);
+  const e = errOf(s), lo = s.area * (1 - e), hi = s.area * (1 + e);
   const web = s.website ? `<a href="${esc(/^https?:/.test(s.website) ? s.website : "http://" + s.website)}" target="_blank" rel="noopener">${esc(s.website.replace(/^https?:\/\//, ""))}</a>` : "";
   $("detail").innerHTML = `<button class="close" aria-label="Затвори" id="dclose">×</button>
     <h3>${esc(s.name)}</h3>
     <div><span class="pill" style="border-color:${CATEGORIES[s.cat].color}">${esc(CATEGORIES[s.cat].label)}</span>${s.mall ? `<span class="pill">в ${esc(s.mall)}</span>` : ""}</div>
     <dl class="kv">
-      <dt>Площ</dt><dd class="tabnum">≈ ${fmt(s.area)} м² <span class="meta">(${fmt(lo)}–${fmt(hi)})</span><br><span class="pill ${s.area_conf === "типична" ? "t" : "m"}">${esc(s.area_conf)}</span> <span class="meta">${esc(s.area_note)}</span></dd>
+      <dt>Площ</dt><dd class="tabnum">≈ ${fmt(s.area)} м² <span class="meta">(${fmt(lo)}–${fmt(hi)})</span><br><span class="pill ${s.area_conf === "типична" ? "t" : "m"}">${esc(s.area_conf)}</span> <span class="meta">${esc(s.area_note)}</span>
+        ${s.area_true > 0 ? `<span class="meta">Моделът даваше ${fmt(s.area_model)} м² (${esc(s.area_method)}).</span> <button class="linkbtn" id="dUnconf">махни потвърждението</button>` : ""}
+        <div class="row" style="margin-top:6px"><input type="number" id="dArea" min="1" placeholder="реална площ, м²" style="width:130px" aria-label="Реална площ в м²"><button class="btn" id="dConf">${s.area_true > 0 ? "Промени" : "Потвърди"}</button></div></dd>
       ${s.brand ? `<dt>Марка</dt><dd>${esc(s.brand)}</dd>` : ""}
       ${s.address ? `<dt>Адрес</dt><dd>${esc(s.address)}</dd>` : ""}
       ${s.phone ? `<dt>Телефон</dt><dd>${esc(s.phone)}</dd>` : ""}
@@ -637,7 +643,52 @@ function select(id, fly) {
       <dt>Координати</dt><dd class="tabnum">${s.lat}, ${s.lon}</dd>
     </dl>`;
   $("detail").hidden = false;
+  $("dConf").onclick = () => { const v = parseFloat($("dArea").value); if (!(v > 0)) { $("dArea").focus(); return; } confirmArea(s, v); render(); select(id); };
+  if ($("dUnconf")) $("dUnconf").onclick = () => { confirmArea(s, 0); render(); select(id); };
   $("dclose").onclick = () => { $("detail").hidden = true; state.sel = null; document.querySelectorAll(".item.on").forEach((e) => e.classList.remove("on")); };
+}
+
+/* =====================================================================
+   КАЛИБРОВКА НА ПЛОЩТА: сравнява модела с потвърдените реални площи
+   ===================================================================== */
+const METHODS = ["измерена", "по сграда", "типична"];
+const DEFAULT_ERR = { "измерена": 0.1, "по сграда": 0.35, "типична": 0.5, "от източника": 0.1, "от сайта": 0.1, "потвърдена": 0.03 };
+const CAL_MIN = 5; // от колко потвърждения нататък грешката на метода се взима от реалните данни
+function median(xs) { const v = [...xs].sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
+function calibration() {
+  const out = {};
+  for (const m of METHODS) {
+    const xs = Object.values(DB.areas).flatMap((a) => a.shops).filter((s) => s.area_true > 0 && s.area_method === m && s.area_model > 0);
+    const errs = xs.map((s) => Math.abs(s.area_model - s.area_true) / s.area_true), ratio = xs.map((s) => s.area_model / s.area_true);
+    out[m] = { n: xs.length, err: xs.length ? median(errs) : null, bias: xs.length ? median(ratio) : null };
+  }
+  return out;
+}
+let CAL = {};
+function errOf(s) {
+  if (s.area_true > 0) return DEFAULT_ERR["потвърдена"];
+  const c = CAL[s.area_conf];
+  return c && c.n >= CAL_MIN ? Math.max(0.05, c.err) : (DEFAULT_ERR[s.area_conf] ?? s.area_err ?? 0.5);
+}
+// стари данни: добавя полетата за калибровка и прилага новото правило за „по сграда“
+function migrate() {
+  for (const a of Object.values(DB.areas)) for (const s of a.shops) {
+    if (s.area_model === undefined && !(s.area_true > 0)) { s.area_model = s.area; s.area_method = s.area_conf; }
+    if (s.area_conf === "по сграда" && !(s.area_true > 0) && s.area > CATEGORIES[s.cat].size[1] && !/^самостоятелна/.test(s.area_note || "")) {
+      const typ = CATEGORIES[s.cat].size[1];
+      Object.assign(s, { area: typ, area_model: typ, area_method: "типична", area_conf: "типична", area_err: 0.5,
+        area_note: "сградата не стига за по-точна оценка; приета е типичната площ за бранша" });
+    }
+  }
+}
+function confirmArea(s, v) {
+  if (v > 0) {
+    if (!(s.area_true > 0)) { s.area_model = s.area_model ?? s.area; s.area_method = s.area_method ?? s.area_conf; s.prev = { area: s.area, conf: s.area_conf, note: s.area_note }; }
+    Object.assign(s, { area_true: Math.round(v), area: Math.round(v), area_conf: "потвърдена", area_note: "въведена ръчно" });
+  } else if (s.prev) {
+    Object.assign(s, { area: s.prev.area, area_conf: s.prev.conf, area_note: s.prev.note }); delete s.area_true; delete s.prev;
+  }
+  persist(); CAL = calibration();
 }
 
 /* =====================================================================
@@ -730,19 +781,31 @@ function barChart(items, label) {
   return `<div class="scroll"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><line x1="12" x2="${W - 12}" y1="${base}" y2="${base}" stroke="var(--line)"/>${bars}</svg></div>`;
 }
 
+// Покритие: колко от реалните обекти познава OpenStreetMap, по контролни проби на място
+function coverage(a) {
+  const xs = (a.samples || []).filter((x) => x.real > 0);
+  const osm = xs.reduce((t, x) => t + x.osm, 0), real = xs.reduce((t, x) => t + x.real, 0);
+  return xs.length && real ? { n: xs.length, osm, real, rate: Math.min(1, osm / real) } : null;
+}
+function inBounds(s, b) { return s.lat >= b[0] && s.lat <= b[2] && s.lon >= b[1] && s.lon <= b[3]; }
+
 function renderAnalysis(list) {
   const a = A(); if (!a) { $("analysis").innerHTML = ""; return; }
-  a.tourism = a.tourism || [];
-  const R = nsiFor(a), S = R ? nsiSummary(R) : null;
+  a.tourism = a.tourism || []; a.samples = a.samples || [];
+  drawSamples(a);
+  const R = nsiFor(a), S = R ? nsiSummary(R) : null, C = coverage(a);
   const total = list.reduce((t, s) => t + s.area, 0);
-  const lo = list.reduce((t, s) => t + s.area * (1 - s.area_err), 0), hi = list.reduce((t, s) => t + s.area * (1 + s.area_err), 0);
+  const lo = list.reduce((t, s) => t + s.area * (1 - errOf(s)), 0), hi = list.reduce((t, s) => t + s.area * (1 + errOf(s)), 0);
   const osmBeds = a.stays.reduce((t, h) => t + h.beds, 0);
   const useNsi = !!(S && S.peakGuests);
-  const peak = useNsi ? S.peakGuests : osmBeds * state.occ, perShop = list.length ? peak / list.length : 0;
+  const peak = useNsi ? S.peakGuests : osmBeds * state.occ;
+  // площта, коригирана с покритието: необхванатите обекти се приемат със средната площ на познатите
+  const totalAdj = C ? total / C.rate : total;
+  const per1000 = (ar) => peak > 0 ? ar / (peak / 1000) : 0;
   const rows = Object.keys(CATEGORIES).filter((c) => state.cats.has(c)).map((c) => {
     const xs = list.filter((s) => s.cat === c), ar = xs.reduce((t, s) => t + s.area, 0), q = { m: 0, b: 0, t: 0 };
     xs.forEach((s) => s.area_conf === "типична" ? q.t++ : s.area_conf === "по сграда" ? q.b++ : q.m++);
-    return { c, n: xs.length, ar, avg: xs.length ? ar / xs.length : 0, q };
+    return { c, n: xs.length, ar, avg: xs.length ? ar / xs.length : 0, q, dens: per1000(C ? ar / C.rate : ar) };
   }).filter((r) => r.n);
   const brands = Object.entries(chainCounts(list)).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1]).slice(0, 10);
 
@@ -752,29 +815,38 @@ function renderAnalysis(list) {
   const peakTile = useNsi
     ? `<div class="tile"><div class="l">Гости на нощ, пик</div><div class="v">${fmt(peak)}</div><div class="s">средно през ${MONTHS_FULL[S.peak.m - 1]} ${S.Y}, по нощувки от НСИ</div></div>`
     : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост ${Math.round(state.occ * 100)}%</label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
+  const countTile = C
+    ? `<div class="tile"><div class="l">Обекти</div><div class="v">≈ ${fmt(list.length / C.rate)}</div><div class="s">${fmt(list.length)} на картата · покритие ${Math.round(C.rate * 100)}% по ${C.n} ${C.n === 1 ? "проба" : "проби"}</div></div>`
+    : `<div class="tile"><div class="l">Обекти</div><div class="v">поне ${fmt(list.length)}</div><div class="s">толкова познава OSM; реалните са повече — виж „Покритие“</div></div>`;
+  const areaTile = C
+    ? `<div class="tile"><div class="l">Търговска площ</div><div class="v">≈ ${fmt(totalAdj)} м²</div><div class="s tabnum">на картата ${fmt(total)} м² (${fmt(lo)}–${fmt(hi)})</div></div>`
+    : `<div class="tile"><div class="l">Търговска площ</div><div class="v">поне ${fmt(total)} м²</div><div class="s tabnum">диапазон ${fmt(lo)}–${fmt(hi)} м²</div></div>`;
+  const densTile = `<div class="tile"><div class="l">Площ на 1000 гости</div><div class="v">${peak > 0 ? fmt(per1000(totalAdj)) + " м²" : "—"}</div><div class="s">${C ? "с корекция за покритие" : "без корекция за покритие"}; сравнявай зони, не обекти</div></div>`;
 
   $("analysis").innerHTML = `
     <div class="tiles">
-      <div class="tile"><div class="l">Обекти</div><div class="v">${fmt(list.length)}</div><div class="s">от ${fmt(a.shops.length)} в зоната</div></div>
-      <div class="tile"><div class="l">Обща търговска площ</div><div class="v">≈ ${fmt(total)} м²</div><div class="s tabnum">диапазон ${fmt(lo)}–${fmt(hi)} м²</div></div>
+      ${countTile}${areaTile}
       <div class="tile"><div class="l">Средна площ</div><div class="v">${fmt(list.length ? total / list.length : 0)} м²</div><div class="s">на обект</div></div>
-      ${bedsTile}${peakTile}
-      <div class="tile"><div class="l">Гости на обект</div><div class="v">≈ ${fmt(perShop)}</div><div class="s">на нощ в пика, за избраните браншове</div></div>
+      ${bedsTile}${peakTile}${densTile}
     </div>
     <div class="cols">
       <div class="card"><h2>По бранш</h2><div class="scroll"><table>
-        <thead><tr><th>Бранш</th><th>Обекти</th><th>Площ м²</th><th>Средно м²</th><th>Точност на площта</th></tr></thead>
-        <tbody>${rows.map((r) => `<tr><td><span class="dot" style="background:${CATEGORIES[r.c].color};margin-right:6px"></span>${esc(CATEGORIES[r.c].label)}</td><td>${r.n}</td><td>${fmt(r.ar)}</td><td>${fmt(r.avg)}</td>
-          <td><div class="bar" title="измерена ${r.q.m} · по сграда ${r.q.b} · типична ${r.q.t}"><i style="width:${r.q.m / r.n * 100}%;background:var(--accent)"></i><i style="width:${r.q.b / r.n * 100}%;background:color-mix(in srgb, var(--accent) 45%, var(--chip))"></i><i style="width:${r.q.t / r.n * 100}%;background:var(--warn);opacity:.55"></i></div></td></tr>`).join("") || '<tr><td colspan="5">Няма обекти.</td></tr>'}</tbody>
+        <thead><tr><th>Бранш</th><th>Обекти</th><th>Площ м²</th><th>Средно м²</th><th title="търговска площ на 1000 гости на нощ в пика">м² / 1000 гости</th><th>Точност на площта</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td><span class="dot" style="background:${CATEGORIES[r.c].color};margin-right:6px"></span>${esc(CATEGORIES[r.c].label)}</td><td>${r.n}</td><td>${fmt(r.ar)}</td><td>${fmt(r.avg)}</td><td>${peak > 0 ? fmt(r.dens) : "—"}</td>
+          <td><div class="bar" title="измерена ${r.q.m} · по сграда ${r.q.b} · типична ${r.q.t}"><i style="width:${r.q.m / r.n * 100}%;background:var(--accent)"></i><i style="width:${r.q.b / r.n * 100}%;background:color-mix(in srgb, var(--accent) 45%, var(--chip))"></i><i style="width:${r.q.t / r.n * 100}%;background:var(--warn);opacity:.55"></i></div></td></tr>`).join("") || '<tr><td colspan="6">Няма обекти.</td></tr>'}</tbody>
       </table></div>
-      <p class="note">Точност: тъмно — площта е измерена от контура на обекта; светло — изведена от сградата; оранжево — типична площ за бранша (най-груба оценка).</p></div>
+      <p class="note">Точност: тъмно — измерена от контура или потвърдена; светло — изведена от сградата; оранжево — типична площ за бранша (най-груба оценка). „м² / 1000 гости“ показва колко търговска площ от бранша се пада на 1000 гости в пика; полезно е за сравнение между зони и браншове${useNsi ? ". Гостите са за курорта в границите на НСИ, а обектите — за зоната на картата; сравнявай само зони, които съвпадат с курорта" : ""}.</p>
+      ${calibrationTable()}</div>
       <div class="card"><h2>Вериги в избора</h2>${brands.length ? `<table><tbody>${brands.map(([b, n]) => `<tr><td>${esc(b)}</td><td>${n}</td></tr>`).join("")}</tbody></table>` : '<p class="note">Няма марки с 2+ обекта в избора.</p>'}</div>
     </div>
-    ${R ? nsiCard(a, R, S) : manualCard(a)}`;
+    ${coverageCard(a, list, C)}
+    ${R ? nsiCard(a, R, S) : manualCard(a)}
+    <p class="note" style="margin:0">Карта: Esri, CARTO. Данни: © участниците в OpenStreetMap (ODbL), НСИ. Безплатните публични услуги са за лична и лека употреба; за работа с клиенти виж Настройки → Карта и данни.</p>`;
 
   if ($("occ")) $("occ").oninput = (e) => { state.occ = +e.target.value; saveUI(); renderAnalysis(filtered()); };
   if ($("nsiYear")) $("nsiYear").onchange = (e) => { state.nsiYear = +e.target.value; renderAnalysis(filtered()); };
   if ($("nsiOpen")) $("nsiOpen").onclick = nsiDialog;
+  bindCoverage(a, list);
   if ($("tAdd")) {
     $("tAdd").onclick = () => {
       const y = parseInt($("tYear").value, 10), n = parseInt($("tNights").value, 10) || 0, p = parseInt($("tArr").value, 10) || 0;
@@ -784,6 +856,49 @@ function renderAnalysis(list) {
     };
     $("ttab").querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { a.tourism.sort((x, y) => x.year - y.year).splice(+b.dataset.del, 1); persist(); renderAnalysis(filtered()); });
   }
+}
+
+function calibrationTable() {
+  const rows = METHODS.map((m) => ({ m, ...CAL[m] }));
+  const any = rows.some((r) => r.n);
+  return `<details style="margin-top:8px"><summary class="meta" style="cursor:pointer">Калибровка на площта${any ? "" : " (още няма потвърдени площи)"}</summary>
+    <p class="note">Като потвърдиш реалната площ на обект (щракни го → „Потвърди“), системата сравнява модела с действителността. След ${CAL_MIN} потвърждения за даден метод диапазоните се изчисляват от реалната грешка, а не от предположение.</p>
+    <div class="scroll"><table><thead><tr><th>Метод</th><th>Потвърдени</th><th>Средна грешка</th><th>Моделът дава</th><th>Диапазон ±</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td>${esc(r.m)}</td><td>${r.n}</td><td>${r.n ? Math.round(r.err * 100) + "%" : "—"}</td><td>${r.n ? (r.bias >= 1 ? "+" : "") + Math.round((r.bias - 1) * 100) + "% спрямо реалната" : "—"}</td><td>${r.n >= CAL_MIN ? Math.round(Math.max(0.05, r.err) * 100) + "% (измерено)" : Math.round(DEFAULT_ERR[r.m] * 100) + "% (предположение)"}</td></tr>`).join("")}
+    </tbody></table></div></details>`;
+}
+
+function coverageCard(a, list, C) {
+  return `<div class="card"><h2>Покритие на данните</h2>
+    <p class="note" style="margin-top:0">OpenStreetMap рядко познава всички обекти. Обиколи един участък на място, приближи картата точно до него и запиши колко обекта от избраните браншове има реално. Няколко проби в различни части на зоната дават процент покритие, с който се коригират броят и площта.</p>
+    <div class="row"><span class="meta">В текущия изглед на картата: <b id="cvOsm">—</b> обекта от избраните браншове.</span>
+      <input type="number" id="cvReal" min="1" placeholder="реално на място" style="width:150px" aria-label="Реален брой обекти в участъка">
+      <input type="text" id="cvNote" placeholder="участък, напр. „централна алея“" style="flex:1;min-width:160px" aria-label="Име на участъка">
+      <button class="btn" id="cvAdd">Запиши проба</button></div>
+    ${a.samples.length ? `<div class="scroll" style="margin-top:10px"><table><thead><tr><th>Участък</th><th>На картата</th><th>Реално</th><th>Покритие</th><th>Дата</th><th></th></tr></thead><tbody>
+      ${a.samples.map((x, i) => `<tr><td>${esc(x.note || "проба " + (i + 1))}</td><td>${x.osm}</td><td>${x.real}</td><td>${Math.round(Math.min(1, x.osm / x.real) * 100)}%</td><td>${esc(x.date)}</td><td><button class="linkbtn" data-show="${i}">покажи</button> · <button class="linkbtn" data-sdel="${i}">изтрий</button></td></tr>`).join("")}
+      </tbody></table></div>` : ""}
+    ${C ? `<p class="note">Общо покритие: OSM познава ${C.osm} от ${C.real} проверени обекта (${Math.round(C.rate * 100)}%). Една проба е слаб показател; добре е пробите да са поне 3, в различни части на зоната.</p>` : ""}
+  </div>`;
+}
+let sampleLayer;
+function drawSamples(a) {
+  if (!sampleLayer) sampleLayer = L.layerGroup().addTo(map);
+  sampleLayer.clearLayers();
+  (a.samples || []).forEach((x) => L.rectangle([[x.bbox[0], x.bbox[1]], [x.bbox[2], x.bbox[3]]], { color: "#a1620f", weight: 1.5, dashArray: "5 4", fill: false, interactive: false }).addTo(sampleLayer));
+}
+function bindCoverage(a, list) {
+  const count = () => { const b = map.getBounds(), bb = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]; return [list.filter((s) => inBounds(s, bb)).length, bb]; };
+  const upd = () => { if ($("cvOsm")) $("cvOsm").textContent = count()[0]; };
+  upd(); map.off("moveend", window.__cvUpd); window.__cvUpd = upd; map.on("moveend", upd);
+  $("cvAdd").onclick = () => {
+    const real = parseInt($("cvReal").value, 10); if (!(real > 0)) { $("cvReal").focus(); return; }
+    const [osm, bb] = count();
+    a.samples.push({ bbox: bb.map((x) => +x.toFixed(5)), osm, real, note: $("cvNote").value.trim(), cats: [...state.cats], date: new Date().toLocaleDateString("bg-BG") });
+    persist(); renderAnalysis(filtered());
+  };
+  $("analysis").querySelectorAll("[data-sdel]").forEach((b) => b.onclick = () => { a.samples.splice(+b.dataset.sdel, 1); persist(); renderAnalysis(filtered()); });
+  $("analysis").querySelectorAll("[data-show]").forEach((b) => b.onclick = () => { const x = a.samples[+b.dataset.show].bbox; map.fitBounds([[x[0], x[1]], [x[2], x[3]]]); window.scrollTo({ top: 0, behavior: "smooth" }); });
 }
 
 function nsiCard(a, R, S) {
@@ -873,10 +988,17 @@ async function collect(id, name, bbox) {
     const res = processOsm(osm, bbox);
     const prev = DB.areas[id];
     // запазва ръчно добавените (CSV) обекти и туристическите данни при обновяване
+    if (prev) {
+      const old = new Map(prev.shops.map((x) => [x.id, x]));
+      for (const sh of res.shops) {
+        const o = old.get(sh.id);
+        if (o && o.area_true > 0) Object.assign(sh, { area_true: o.area_true, prev: { area: sh.area, conf: sh.area_conf, note: sh.area_note }, area: o.area_true, area_conf: "потвърдена", area_note: "въведена ръчно" });
+      }
+    }
     if (prev) mergeInto(res.shops, prev.shops.filter((s) => !s.id.startsWith("osm:")).map((s) => Object.assign({}, s, { sources: [...s.sources] })));
     DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [] }, res);
     if (DB.settings.proxy && DB.settings.proxyKey) { progress("Проверка на сайтовете…"); await enrichArea(DB.areas[id], progress); }
-    state.area = id; saveUI(); persist();
+    state.area = id; saveUI(); persist(); CAL = calibration();
     progress(""); loadArea();
     toastMeta(`${name}: ${res.shops.length} обекта в браншовете, ${res.stays.length} места за настаняване`);
   } catch (e) {
@@ -996,6 +1118,11 @@ function settingsDialog() {
     <div class="field"><label for="sProxy">Адрес на proxy.php</label><input type="text" id="sProxy" placeholder="https://твоят-сайт.bg/obekti/proxy.php" value="${esc(s.proxy)}"></div>
     <div class="field"><label for="sKey">Ключ (същият като в proxy.php)</label><input type="password" id="sKey" value="${esc(s.proxyKey)}"></div>
     <div id="sRes"></div>
+    <h2 style="margin-top:18px">Карта и данни</h2>
+    <p class="hint">По подразбиране системата ползва безплатни публични услуги: подложки от Esri и CARTO и сървърите на Overpass за OpenStreetMap. Те са предназначени за лична и лека употреба; условията им ограничават търговската и масовата. Преди работа с клиенти или вериги сложи тук свой доставчик: например MapTiler или Stadia с твой ключ и собствен или платен Overpass сървър.</p>
+    <div class="field"><label for="sTile">Адрес на подложка ({z}, {x}, {y})</label><input type="text" id="sTile" placeholder="https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=ТВОЯТ-КЛЮЧ" value="${esc(s.tileUrl || "")}"></div>
+    <div class="field"><label for="sTileAttr">Надпис за авторските права на подложката</label><input type="text" id="sTileAttr" placeholder="© MapTiler © OpenStreetMap" value="${esc(s.tileAttr || "")}"></div>
+    <div class="field"><label for="sOver">Собствен Overpass сървър (по желание)</label><input type="text" id="sOver" placeholder="https://моят-сървър/api/interpreter" value="${esc(s.overpass || "")}"></div>
     <div class="row" style="justify-content:space-between;margin-top:6px"><button class="btn" id="sTest">Провери връзката</button><span class="row"><button class="btn" data-close>Отказ</button><button class="btn primary" id="sSave">Запази</button></span></div>`, () => {
     $("sTest").onclick = async () => {
       $("sRes").innerHTML = '<p class="hint">Проверка…</p>';
@@ -1004,7 +1131,15 @@ function settingsDialog() {
         $("sRes").innerHTML = r.ok ? '<p class="ok">Работи.</p>' : `<p class="err">Proxy-то отговори с грешка ${r.status}${r.status === 403 ? " (грешен ключ)" : ""}.</p>`;
       } catch (e) { $("sRes").innerHTML = '<p class="err">Няма връзка с proxy.php. Провери адреса.</p>'; }
     };
-    $("sSave").onclick = () => { s.proxy = $("sProxy").value.trim(); s.proxyKey = $("sKey").value; persist(); closeModal(); };
+    $("sSave").onclick = () => {
+      const tile = $("sTile").value.trim();
+      if (tile && !/^https:\/\/.+\{z\}.+\{x\}.+\{y\}/.test(tile.replace("{y}{r}", "{y}"))) { $("sRes").innerHTML = '<p class="err">Адресът на подложката трябва да започва с https:// и да съдържа {z}, {x} и {y}.</p>'; return; }
+      const reload = tile !== (s.tileUrl || "");
+      s.proxy = $("sProxy").value.trim(); s.proxyKey = $("sKey").value;
+      s.tileUrl = tile; s.tileAttr = $("sTileAttr").value.trim(); s.overpass = $("sOver").value.trim();
+      persist(); closeModal();
+      if (reload) location.reload();
+    };
   });
 }
 
@@ -1031,6 +1166,7 @@ if (typeof L === "undefined") {
   $("btnSettings").onclick = settingsDialog;
   $("btnNsi").onclick = nsiDialog;
   $("btnWelcome").onclick = () => collect("slanchev-bryag", ...PRESETS["slanchev-bryag"]);
+  migrate(); CAL = calibration();
   loadArea();
 }
 </script>
