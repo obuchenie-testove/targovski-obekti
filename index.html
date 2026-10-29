@@ -189,7 +189,7 @@ input[type=range] { accent-color: var(--accent); width: 140px }
     <a class="navlink" href="kak-e-napraveno.html">Как работи →</a>
     <button class="btn" id="btnNsi">Данни НСИ</button>
     <button class="btn" id="btnNtr">Хотели (НТР)</button>
-    <button class="btn" id="btnImport">Импорт CSV</button>
+    <button class="btn" id="btnImport">Импорт</button>
     <button class="btn" id="btnExport">Експорт</button>
     <button class="btn" id="btnSettings" aria-label="Настройки">Настройки</button>
   </header>
@@ -238,6 +238,7 @@ input[type=range] { accent-color: var(--accent); width: 140px }
 
 <div class="modal" id="modal" hidden><div class="dialog" id="dialog" role="dialog" aria-modal="true"></div></div>
 <input type="file" id="fileCsv" accept=".csv,text/csv" hidden>
+<input type="file" id="fileGeo" accept=".kml,.kmz,.geojson,.json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" hidden>
 <input type="file" id="fileJson" accept=".json,application/json" hidden>
 <input type="file" id="fileNsi" accept=".csv,text/csv" multiple hidden>
 <input type="file" id="fileNtr" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
@@ -718,7 +719,7 @@ function renderCats() {
   $("cats").querySelectorAll("[data-mixed]").forEach((i) => i.indeterminate = true);
   $("cats").querySelectorAll("[data-g]").forEach((i) => i.onchange = () => { catsOfGroup(i.dataset.g).forEach((c) => i.checked ? state.cats.add(c) : state.cats.delete(c)); renderCats(); render(); });
   $("cats").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => { const g = b.dataset.open; state.openGroups.has(g) ? state.openGroups.delete(g) : state.openGroups.add(g); renderCats(); });
-  $("cats").querySelectorAll("input").forEach((i) => i.onchange = () => { i.checked ? state.cats.add(i.dataset.c) : state.cats.delete(i.dataset.c); render(); });
+  $("cats").querySelectorAll("input[data-c]").forEach((i) => i.onchange = () => { i.checked ? state.cats.add(i.dataset.c) : state.cats.delete(i.dataset.c); renderCats(); render(); });
 }
 
 function render() {
@@ -1823,15 +1824,102 @@ function newAreaDialog() {
 }
 
 function importDialog() {
-  openModal(`<h3>Импорт на обекти от CSV</h3>
-    <p class="hint">Добави обекти от всякакъв друг източник: списък на верига, справочник, обход на място. Обектите в зоната „${esc(A().name)}“ се обединяват с вече намерените.</p>
-    <p class="hint">Колони (на английски или български): <b>name</b>, <b>category</b>, <b>lat</b>, <b>lon</b>, и по желание brand, address, phone, website, hours, mall, area_m2, source. Категорията е име на бранш, например „Дрехи“.</p>
-    <div class="row" style="justify-content:space-between"><button class="linkbtn" id="iTpl">Свали празен шаблон</button><button class="btn primary" id="iPick">Избери CSV файл</button></div>
+  const catOpts = `<option value="auto">Автоматично по името и описанието</option>` + Object.entries(GROUPS).map(([g, G]) => `<optgroup label="${esc(G.label)}">${catsOfGroup(g).map((id) => `<option value="${id}">${esc(CATEGORIES[id].label)}</option>`).join("")}</optgroup>`).join("");
+  openModal(`<h3>Импорт на обекти</h3>
+    <p class="hint">Добави обекти от всякакъв друг източник. Обектите в зоната „${esc(A().name)}“ се обединяват с вече намерените, а тези извън нея се пропускат.</p>
+    <div class="tabs"><button class="on" data-t="g">Карта (KML, KMZ, GeoJSON)</button><button data-t="c">Таблица (CSV)</button></div>
+    <div data-p="g">
+      <p class="hint">Например карта от Google My Maps: отвори я → меню ⋮ → „Експортиране в KML/KMZ“. Работят и файлове от Google Earth и GeoJSON.</p>
+      <div class="field"><label for="gCat">Бранш</label><select id="gCat">${catOpts}</select></div>
+      <div class="field"><label for="gBrand">Марка (ако всички точки са на една верига)</label><input type="text" id="gBrand" placeholder="напр. Lidl"></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn primary" id="gPick">Избери файл</button></div>
+    </div>
+    <div data-p="c" hidden>
+      <p class="hint">Колони (на английски или български): <b>name</b>, <b>category</b>, <b>lat</b>, <b>lon</b>, и по желание brand, address, phone, website, hours, mall, area_m2, source. Категорията е име на бранш, например „Дрехи“.</p>
+      <div class="row" style="justify-content:space-between"><button class="linkbtn" id="iTpl">Свали празен шаблон</button><button class="btn primary" id="iPick">Избери CSV файл</button></div>
+    </div>
     <div id="iRes"></div>`, () => {
+    $("dialog").querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+      $("dialog").querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+      $("dialog").querySelectorAll("[data-p]").forEach((p) => p.hidden = p.dataset.p !== b.dataset.t);
+    });
     $("iTpl").onclick = () => download("shablon-obekti.csv", "﻿name,brand,category,lat,lon,address,phone,website,hours,mall,area_m2,source\r\nПример магазин,Пример,Дрехи,42.6951,27.7101,,,,,,85,Обход\r\n", "text/csv");
     $("iPick").onclick = () => $("fileCsv").click();
+    $("gPick").onclick = () => $("fileGeo").click();
   });
 }
+/* KML / KMZ / GeoJSON: точки (или центърът на полигон) с име, описание и папка */
+async function readGeoFile(f) {
+  const name = f.name.toLowerCase();
+  if (name.endsWith(".geojson") || name.endsWith(".json")) {
+    const j = JSON.parse(await f.text());
+    return (j.features || []).map((ft) => {
+      const g = ft.geometry || {}, p = ft.properties || {};
+      let c = null;
+      if (g.type === "Point") c = g.coordinates;
+      else if (g.type === "Polygon") { const r = g.coordinates[0]; c = [r.reduce((t, x) => t + x[0], 0) / r.length, r.reduce((t, x) => t + x[1], 0) / r.length]; }
+      return c ? { name: p.name || p.Name || p.title || "", desc: p.description || p.address || "", folder: p.category || "", lon: +c[0], lat: +c[1] } : null;
+    }).filter(Boolean);
+  }
+  let xml;
+  if (name.endsWith(".kmz")) {
+    if (!window.JSZip) await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"; sc.onload = res; sc.onerror = () => rej(new Error("JSZip не се зареди")); document.head.appendChild(sc); });
+    const zip = await JSZip.loadAsync(await f.arrayBuffer());
+    const kml = Object.keys(zip.files).find((k) => k.toLowerCase().endsWith(".kml"));
+    if (!kml) throw new Error("В KMZ файла няма KML");
+    xml = await zip.files[kml].async("string");
+  } else xml = await f.text();
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const strip = (h) => new DOMParser().parseFromString(h || "", "text/html").body.textContent.replace(/\s+/g, " ").trim();
+  return [...doc.getElementsByTagName("Placemark")].map((pm) => {
+    const txt = (tag) => (pm.getElementsByTagName(tag)[0] || {}).textContent || "";
+    const coords = txt("coordinates").trim().split(/\s+/).map((c) => c.split(",").map(Number)).filter((c) => c.length >= 2 && isFinite(c[0]) && isFinite(c[1]));
+    if (!coords.length) return null;
+    const lon = coords.reduce((t, c) => t + c[0], 0) / coords.length, lat = coords.reduce((t, c) => t + c[1], 0) / coords.length;
+    let folder = "", el = pm.parentElement;
+    while (el && !folder) { if (el.tagName === "Folder") folder = (el.getElementsByTagName("name")[0] || {}).textContent || ""; el = el.parentElement; }
+    const ext = [...pm.getElementsByTagName("Data")].map((d) => (d.getAttribute("name") || "") + " " + ((d.getElementsByTagName("value")[0] || {}).textContent || "")).join(" ");
+    return { name: txt("name").trim(), desc: strip(txt("description") + " " + ext), folder: folder.trim(), lat, lon };
+  }).filter(Boolean);
+}
+// Бранш по ключови думи в името, описанието или папката (български и английски)
+const GUESS = [
+  [/обув|shoe|deichmann|ccc|humanic/i, "obuvki"], [/бижу|часовни|jewel|watch|pandora|swarovski/i, "bijuta"],
+  [/дрех|облек|бутик|мода|fashion|cloth|apparel|lc waikiki|sinsay|h&m|zara|reserved|\bkik\b|pepco|mohito/i, "drehi"],
+  [/аптек|pharm|sopharmacy|subra|ремедиум/i, "apteki"], [/оптик|optic/i, "optika"],
+  [/дрогер|козмет|парфюм|cosmet|perfum|lilly|dm\b|douglas/i, "kozmetika"], [/фризьор|салон|маникюр|студио|beauty|hair|nail|spa|масаж|tattoo/i, "studia"],
+  [/техника|електрон|телефон|technopolis|технополис|technomarket|техномаркет|zora|\ba1\b|vivacom|yettel/i, "elektronika"],
+  [/супермаркет|хранит|магазин за храни|market|lidl|kaufland|billa|fantastico|t-market|т-маркет|cba|ив-ко|супер/i, "hrana"],
+  [/пекарн|сладкар|bakery|pastry|сладолед|ice cream/i, "pekarni"], [/алкохол|вино|wine|liquor|тютюн|tobacco/i, "alkohol"],
+  [/ресторант|механа|таверна|restaurant|grill|скара|пицария|pizza/i, "restoranti"], [/бърза храна|fast food|дюнер|mcdonald|kfc|burger/i, "barzo"],
+  [/кафе|coffee|cafe|costa|starbucks/i, "kafeneta"], [/бар\b|клуб|pub|bar\b|club|disco/i, "barove"],
+  [/книж|книги|book|хеликон|ciela|сиела/i, "knigi"], [/цвет|flower|florist/i, "cvetya"], [/спорт|sport|decathlon|intersport/i, "sport"],
+  [/играчк|детск|toy|kids|baby/i, "detski"], [/сувенир|подар|gift|souvenir/i, "suveniri"],
+  [/обмен|обмяна|банк|bank|atm|банкомат|exchange/i, "obmyana"], [/агенц|туристи|travel|rent a car|rental|коли под наем/i, "turizam"],
+  [/дом|мебел|furniture|home|jysk|ikea|praktiker|практикер|mr bricolage/i, "dom"],
+];
+const guessCat = (t) => { for (const [re, c] of GUESS) if (re.test(t)) return c; return null; };
+$("fileGeo").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  const a = A(), src = f.name.replace(/\.(kml|kmz|geojson|json)$/i, ""), fixedCat = $("gCat") ? $("gCat").value : "auto", brand = $("gBrand") ? $("gBrand").value.trim() : "";
+  try {
+    const pts = await readGeoFile(f);
+    let outside = 0, nocat = 0;
+    const recs = [];
+    pts.forEach((p, i) => {
+      if (p.lat < a.bbox[0] || p.lat > a.bbox[2] || p.lon < a.bbox[1] || p.lon > a.bbox[3]) { outside++; return; }
+      const cat = fixedCat !== "auto" ? fixedCat : guessCat(`${brand} ${p.name} ${p.folder} ${p.desc}`);
+      if (!cat) { nocat++; return; }
+      const typ = CATEGORIES[cat].size[1];
+      recs.push({ id: `geo:${src}:${i}`, name: p.name || brand || "(без име)", brand, cat, lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6),
+        address: p.desc.slice(0, 160), phone: "", website: "", hours: "", mall: "", area: typ, area_conf: "типична", area_err: 0.5,
+        area_note: "типична площ за бранша", area_model: typ, area_method: "типична", sources: [src], osm_url: "" });
+    });
+    const [added, matched] = mergeInto(a.shops, recs);
+    persist(); loadArea(false);
+    if ($("iRes")) $("iRes").innerHTML = `<p class="ok">${f.name}: ${pts.length} точки. В зоната: ${recs.length + nocat} → ${added} нови обекта, ${matched} съвпаднаха с вече намерени.${outside ? ` Извън зоната: ${outside}.` : ""}${nocat ? ` Без разпознат бранш: ${nocat} (избери бранш ръчно и зареди отново).` : ""}</p>`;
+  } catch (err) { if ($("iRes")) $("iRes").innerHTML = `<p class="err">Файлът не можа да се прочете: ${esc(err.message || err)}</p>`; }
+};
 $("fileCsv").onchange = async (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   const a = A(), src = f.name.replace(/\.csv$/i, "");
