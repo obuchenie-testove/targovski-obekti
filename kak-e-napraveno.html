@@ -3,189 +3,255 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Как е направено с AI · Търговски обекти</title>
+<title>Как работи · Търговски обекти</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
 <style>
-/* Layout: една колона за четене; хронология с часове вляво; skills като групи с роля и резултат */
+/* Layout: една колона; цикълът на Creativity OS като лента от пет стъпки; скала на профилите 0.1–1.0; слоеве на архитектурата */
 :root {
   --bg: #eef1ef; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67; --line: #d5ddd9;
-  --accent: #1d6b5f; --accent-soft: #dcece8; --human: #d9480f; --human-soft: #fbe6dc; --ai2: #5b4bb3; --ai2-soft: #e8e4f7;
+  --accent: #1d6b5f; --accent-soft: #dcece8; --hot: #d9480f; --hot-soft: #fbe6dc;
+  --ink: #0f2a25; --ink-fg: #e6f2ef; --ink-muted: #9fc1b9;
   --font-display: "Unbounded", "Golos Text", system-ui, sans-serif;
   --font-body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #111615; --panel: #1a211f; --fg: #e3ebe8; --muted: #93a39e; --line: #2c3633;
-  --accent: #5fc0ad; --accent-soft: #1f3631; --human: #f08a5d; --human-soft: #3a2419; --ai2: #a99cf0; --ai2-soft: #27223f; color-scheme: dark } }
+  --accent: #5fc0ad; --accent-soft: #1f3631; --hot: #f08a5d; --hot-soft: #3a2419;
+  --ink: #0a1513; --ink-fg: #e3ebe8; --ink-muted: #8fb3aa; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #111615; --panel: #1a211f; --fg: #e3ebe8; --muted: #93a39e; --line: #2c3633;
-  --accent: #5fc0ad; --accent-soft: #1f3631; --human: #f08a5d; --human-soft: #3a2419; --ai2: #a99cf0; --ai2-soft: #27223f; color-scheme: dark }
+  --accent: #5fc0ad; --accent-soft: #1f3631; --hot: #f08a5d; --hot-soft: #3a2419;
+  --ink: #0a1513; --ink-fg: #e3ebe8; --ink-muted: #8fb3aa; color-scheme: dark }
 
 * { box-sizing: border-box }
 html, body { margin: 0 }
-body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body);
-  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-main { max-width: 860px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: 44px }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body) }
+.band { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+.inner { max-width: 900px; margin: 0 auto }
 a { color: var(--accent) }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
-.top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 14px }
-.top a { font-weight: 600; text-decoration: none }
-.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px }
-h1 { font: 700 clamp(26px, 5vw, 40px)/1.12 var(--font-display); letter-spacing: -.015em; margin: 0; text-wrap: balance }
-h2 { font: 700 21px/1.25 var(--font-display); margin: 0 0 6px; text-wrap: balance }
-h3 { font: 600 16px/1.3 var(--font-body); margin: 0 }
 p { margin: 0; max-width: 66ch }
-.lead { font-size: 18px; color: var(--muted); margin-top: 14px }
-.sub { color: var(--muted); margin-bottom: 18px }
+h2 { font: 700 22px/1.25 var(--font-display); margin: 0 0 8px; letter-spacing: -.01em; text-wrap: balance }
+h3 { font: 600 16px/1.3 var(--font-body); margin: 0 }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 12px }
+.sub { color: var(--muted); margin-bottom: 20px }
+.mono { font-family: var(--font-mono); font-size: .9em }
 
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 24px }
-.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px }
-.stat b { display: block; font: 600 26px/1.1 var(--font-body); font-variant-numeric: tabular-nums }
-.stat span { font-size: 13px; color: var(--muted) }
+/* hero */
+.hero { background: var(--ink); color: var(--ink-fg) }
+.hero .inner { padding-block: 22px 44px }
+.hero nav { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 14px; margin-bottom: 40px }
+.hero nav a { color: var(--ink-fg); font-weight: 600; text-decoration: none; opacity: .85 }
+.hero nav a:hover { opacity: 1; text-decoration: underline }
+.hero .eyebrow { color: var(--ink-muted) }
+.hero h1 { font: 700 clamp(28px, 5.4vw, 46px)/1.1 var(--font-display); margin: 0; letter-spacing: -.02em; text-wrap: balance; max-width: 18ch }
+.hero h1 em { font-style: normal; color: var(--hot) }
+.hero .lead { font-size: 18px; color: var(--ink-muted); margin-top: 18px; max-width: 60ch }
+.formula { margin-top: 26px; font-family: var(--font-mono); font-size: 14px; color: var(--ink-fg); border-left: 2px solid var(--hot); padding: 4px 0 4px 14px; overflow-x: auto; white-space: nowrap }
 
-/* кой какво */
-.who { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px }
-.who > div { border-radius: 8px; padding: 14px 16px; border: 1px solid var(--line); background: var(--panel); min-width: 0 }
-.who h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px }
-.who p { font-size: 14px; color: var(--muted) }
-.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block }
-.h { background: var(--human) } .c { background: var(--accent) } .b { background: var(--ai2) }
+main .inner { display: grid; gap: 56px; padding-block: 48px 64px }
 
-/* хронология */
-.tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 0 }
-.tl li { display: grid; grid-template-columns: 84px 14px minmax(0, 1fr); gap: 0 14px; position: relative }
-.tl time { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--muted); text-align: right; padding-top: 1px }
-.tl .rail { position: relative }
-.tl .rail::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--line) }
-.tl li:last-child .rail::before { bottom: auto; height: 10px }
-.tl .rail .dot { position: absolute; left: 2px; top: 7px; width: 10px; height: 10px; box-shadow: 0 0 0 3px var(--bg) }
-.tl .body { padding-bottom: 20px; min-width: 0 }
-.tl .body p { font-size: 15px; color: var(--muted); margin-top: 2px }
-.tl li.day { display: block; grid-column: 1 / -1; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 4px 0 12px 98px }
+/* три функции */
+.pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px }
+.pillars > div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; min-width: 0 }
+.pillars .k { font: 700 13px/1 var(--font-display); color: var(--accent); letter-spacing: .02em }
+.pillars h3 { margin: 10px 0 6px }
+.pillars p { font-size: 14px; color: var(--muted) }
 
-/* skills */
-.group { display: grid; gap: 10px; margin-top: 22px }
-.group > h3 { font-size: 13px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted) }
-.skill { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 4px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px }
-.skill code { font: 600 14px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; overflow-wrap: anywhere }
-.skill .who-tag { display: block; font-size: 12px; color: var(--muted); margin-top: 2px }
-.skill p { font-size: 15px }
-.skill .out { display: block; font-size: 13px; color: var(--muted); margin-top: 4px }
-.skill.used { border-left: 3px solid var(--accent) }
-.skill.avail { border-left: 3px solid var(--ai2) }
-.skill.new { border-left: 3px dashed var(--human) }
-.principle { background: var(--accent-soft); border-radius: 8px; padding: 16px 18px }
-.principle p { max-width: none }
-.honest li { margin-bottom: 6px; max-width: 66ch }
-footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px }
+/* цикъл */
+.cycle { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel) }
+.cycle li { padding: 16px 14px 18px; border-right: 1px solid var(--line); min-width: 0; position: relative }
+.cycle li:last-child { border-right: 0 }
+.cycle .v { font: 700 15px/1 var(--font-display); letter-spacing: .02em }
+.cycle .s { display: block; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 6px 0 10px }
+.cycle p { font-size: 13.5px; line-height: 1.5; color: var(--muted) }
+.cycle li::after { content: "→"; position: absolute; right: -8px; top: 14px; z-index: 1; background: var(--panel); color: var(--accent); font-weight: 700; font-size: 14px; line-height: 1 }
+.cycle li:last-child::after { content: "↺"; right: 12px }
 
-@media (max-width: 600px) {
-  .skill { grid-template-columns: minmax(0, 1fr) }
-  .tl li { grid-template-columns: 52px 14px minmax(0, 1fr); gap: 0 10px }
-  .tl time { font-size: 13px }
-  .tl .day { padding-left: 0 }
+/* профили */
+.scale { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; margin-top: 4px }
+.scale div { min-width: 0 }
+.scale .bar { height: 10px; border-radius: 3px; background: var(--line) }
+.scale .on .bar { background: var(--accent) }
+.scale .hot .bar { background: var(--hot) }
+.scale .n { font: 600 12px/1 var(--font-mono); margin-top: 8px; color: var(--muted) }
+.scale .on .n, .scale .hot .n { color: var(--fg) }
+.scale .t { font-size: 11px; line-height: 1.3; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere }
+.uses { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 20px; margin-top: 20px; font-size: 14px }
+.uses div { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: baseline }
+.uses .mono { font-weight: 600 }
+
+/* архитектура */
+.arch { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 12px }
+.layers { display: grid; gap: 8px }
+.layer { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 16px; align-items: baseline }
+.layer h3 { font-size: 14px }
+.layer p { font-size: 14px; color: var(--muted) }
+.layer.core { border-color: var(--accent); background: var(--accent-soft) }
+.side { border: 1px dashed var(--hot); border-radius: 8px; padding: 14px 16px; background: var(--hot-soft); display: grid; align-content: start; gap: 8px }
+.side h3 { font-size: 14px; color: var(--hot) }
+.side p { font-size: 13.5px; color: var(--fg) }
+
+/* направено */
+.done { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 28px; margin: 0; padding: 0; list-style: none }
+.done li { padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px }
+.done b { display: block; font-weight: 600 }
+.done span { color: var(--muted); font-size: 14px }
+
+/* указания */
+.steps { counter-reset: s; list-style: none; margin: 0; padding: 0; display: grid; gap: 10px }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px }
+.steps li::before { content: counter(s); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--panel); font: 700 13px/1 var(--font-body) }
+.steps p { font-size: 14.5px; color: var(--muted); margin-top: 2px }
+
+/* принципи */
+.principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px }
+.principles > div { border-top: 2px solid var(--accent); padding-top: 12px }
+.principles p { font-size: 14px; color: var(--muted); margin-top: 4px }
+
+footer { border-top: 1px solid var(--line) }
+footer .inner { padding-block: 20px 32px; font-size: 13px; color: var(--muted); display: grid; gap: 6px }
+footer b { color: var(--fg) }
+
+@media (max-width: 760px) {
+  .cycle { grid-template-columns: minmax(0, 1fr) }
+  .cycle li { border-right: 0; border-bottom: 1px solid var(--line) }
+  .cycle li:last-child { border-bottom: 0 }
+  .cycle li::after { content: "↓"; right: 14px; top: 16px }
+  .arch { grid-template-columns: minmax(0, 1fr) }
+  .layer { grid-template-columns: minmax(0, 1fr) }
+  .scale .t { display: none }
 }
 </style>
 </head>
 <body>
-<main>
-  <nav class="top"><a href="./">← Към системата</a><a href="https://github.com/obuchenie-testove/targovski-obekti" target="_blank" rel="noopener">Кодът в GitHub</a></nav>
 
-  <header>
-    <p class="eyebrow">Демонстрация · човек и AI системи</p>
-    <h1>От гласова бележка до работеща система за около 4 часа</h1>
-    <p class="lead">Карта на търговските обекти по бранш и марка, с оценка на площта и броя гости, свързана с данните на НСИ. Идеята и решенията са на човек. Кодът, анализите и данните са направени от AI системи, всяка в своята роля.</p>
-    <div class="stats">
-      <div class="stat"><b>~4 ч</b><span>от идеята до публикувана система с red team</span></div>
-      <div class="stat"><b>19 740</b><span>стойности от НСИ, събрани от друг AI екип</span></div>
-      <div class="stat"><b>3</b><span>участници: човек, Claude, екип от AI роли</span></div>
-      <div class="stat"><b>0</b><span>езикови модели вътре в самата система</span></div>
-    </div>
-  </header>
+<header class="hero band">
+  <div class="inner">
+    <nav><a href="./">← Към системата</a><a href="https://github.com/obuchenie-testove/targovski-obekti" target="_blank" rel="noopener">Изходен код</a></nav>
+    <p class="eyebrow">Creativity OS · проект „Търговски обекти“</p>
+    <h1>Един въпрос. Една карта. <em>Цяла система</em> зад нея.</h1>
+    <p class="lead">Къде в курорта липсва магазин за обувки? Отговорът изглежда като оцветена карта. Зад него стоят пространствен модел на търсене и предлагане, официална статистика, слой за проверка на данните и AI система, която проектира, изгражда и проверява, без да участва в изчислението.</p>
+    <div class="formula">възможност(x) = Σ легла·K(d) ÷ (1 + 3·Σ площ/типична·K(d)),&nbsp; K(d) = e<sup>−d²/2σ²</sup>,&nbsp; σ = 250 м</div>
+  </div>
+</header>
 
-  <section class="principle">
-    <h2>AI в изграждането, не в системата</h2>
-    <p>Самата система не вика нито един езиков модел. Всяко число идва от отворени данни и правила, които могат да се проверят: OpenStreetMap, НСИ и прости формули. AI е използван там, където е силен: да превърне идея в код, да провери решенията и да събере данните. Така резултатът е евтин за поддръжка, прозрачен и не „измисля“.</p>
-  </section>
+<main class="band">
+  <div class="inner">
 
-  <section>
-    <h2>Кой какво направи</h2>
-    <p class="sub">Три участника, които работиха паралелно, всеки в своята част.</p>
-    <div class="who">
-      <div><h3><span class="dot h"></span>Човек</h3><p>Идеята като гласова бележка, решенията (без LLM вътре, без Python, демо вместо продукт), проверката на живо. Първото реално събиране и откриването на блокираната карта станаха при него.</p></div>
-      <div><h3><span class="dot c"></span>Claude</h3><p>Спецификация от бележката, архитектура, целият код, проучване на алтернативите, red team и premortem анализ, поправките, публикуването в GitHub и тази страница.</p></div>
-      <div><h3><span class="dot b"></span>Belbin AI екип</h3><p>Отделен екип от AI роли събра данните на НСИ за черноморските курорти в Google Drive, със собствен регистър на източниците и доклад. Claude ги свърза със системата.</p></div>
-    </div>
-  </section>
+    <section>
+      <h2>Какво прави</h2>
+      <p class="sub">Три функции, един интерфейс.</p>
+      <div class="pillars">
+        <div><span class="k">КАРТОГРАФИРА</span><h3>Обекти по бранш и марка</h3><p>Отворени геоданни, сайтове на обектите и външни списъци, обединени по разстояние и транслитерирано име.</p></div>
+        <div><span class="k">ОЦЕНЯВА</span><h3>Площ, легла, гости</h3><p>Геометрия на сградите, данни на НСИ по курорти и сезони, диапазон на грешката за всяко число.</p></div>
+        <div><span class="k">ОТКРИВА</span><h3>Празните места на пазара</h3><p>Съотношение между търсене в пешеходна близост и наличното предлагане от бранша.</p></div>
+      </div>
+    </section>
 
-  <section>
-    <h2>Хронология</h2>
-    <p class="sub">Реалните часове на работата, по софийско време.</p>
-    <ol class="tl">
-      <li class="day">28 октомври 2026</li>
-      <li><time>15:51</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Идеята, разказана свободно</h3><p>Гласова бележка: магазини по бранш на карта, площ, брой хора, история за курортите. Claude я подрежда в спецификация с пет отворени въпроса.</p></div></li>
-      <li><time>15:53</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Решения</h3><p>Без езикови модели в системата, OpenStreetMap вместо платения Google, само България, браншове за мол, първо за собствена употреба.</p></div></li>
-      <li><time>~16:00</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Първа версия</h3><p>Събирач на Python: OpenStreetMap, сайтовете на обектите и CSV списъци; оценки на площ и легла; карта с анализ. Тествана с примерни данни.</p></div></li>
-      <li><time>16:08</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>„Не искам Python“ — уеб версия</h3><p>Цялата система е пренаписана като една HTML страница, която събира данните директно от браузъра.</p></div></li>
-      <li><time>16:36</time><span class="rail"><span class="dot b"></span></span><div class="body"><h3>Паралелно: AI екипът започва НСИ</h3><p>Координатор, Проучвател и Завършител събират курортната статистика: 7 Excel файла, 3 CSV извлечения, регистър на източниците.</p></div></li>
-      <li><time>16:48</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Първи реални данни и първи проблем</h3><p>67 обекта и 324 места за настаняване в Слънчев бряг. Картата обаче е блокирана от OpenStreetMap. Сменена е с Esri и верига от резервни подложки.</p></div></li>
-      <li><time>17:13</time><span class="rail"><span class="dot b"></span></span><div class="body"><h3>Докладът на AI екипа е готов</h3><p>Със статус „частично, чака преглед“ и списък с непотвърдени заключения.</p></div></li>
-      <li><time>17:20</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Свързване с НСИ</h3><p>Claude чете доклада в Drive, разпознава двата различни формата на файловете и вгражда легла, нощувки, заетост и сезонност.</p></div></li>
-      <li><time>19:25</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>GitHub и публичен адрес</h3><p>Хранилище и GitHub Pages: системата се отваря от линк.</p></div></li>
-      <li><time>19:36</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Red team</h3><p>Пет слабости в собствената работа, подредени по тежест. Четири са поправени веднага: покритие на данните, надута площ, подвеждащ показател, зависимост от безплатни услуги.</p></div></li>
-      <li><time>19:48</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Premortem</h3><p>Седем сценария, при които проектът се проваля, с ранни сигнали и мерки.</p></div></li>
-      <li><time>20:31</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Решение: демо, не продукт</h3><p>Целта е да покажем идея и реализация с AI. Приоритетите се сменят: готови данни при отваряне, ясен отговор на въпрос, тази страница.</p></div></li>
-      <li class="day">29 октомври 2026</li>
-      <li><time>07:43</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Демо версия</h3><p>Предварително заредени данни, „Къде липсва?“ — карта на местата с много гости и малко обекти от даден бранш, и тази страница.</p></div></li>
-    </ol>
-  </section>
+    <section>
+      <h2>Как работи Creativity OS</h2>
+      <p class="sub">Creativity OS е системата на „Креативност“, която подготвя AI агентите, задава им роля и начин на мислене, предава работата между тях и я проверява. Всеки проект минава през един и същ цикъл.</p>
+      <ol class="cycle">
+        <li><span class="v">Разбери</span><span class="s">цел и граници</span><p>Свободно разказана идея става спецификация. Отделят се факти, хипотези, предложения и човешки решения.</p></li>
+        <li><span class="v">Задай</span><span class="s">роля и профил</span><p>За всяка операция се избира начин на мислене: точно изпълнение, синтез, сценарии или бизнес хипотеза.</p></li>
+        <li><span class="v">Създай</span><span class="s">изпълнение</span><p>Код, данни и интерфейс. Агентите работят паралелно по свои задачи и предават резултат с източници.</p></li>
+        <li><span class="v">Провери</span><span class="s">доказателства</span><p>Red team, premortem, сверка с първоизточника. Съгласието между модели не е доказателство.</p></li>
+        <li><span class="v">Подобри</span><span class="s">следваща версия</span><p>Слабостите стават промени. Приемането на версия остава човешко решение.</p></li>
+      </ol>
+    </section>
 
-  <section>
-    <h2>AI skills: какво беше използвано и какво е възможно</h2>
-    <p class="sub">Skill е пакет от инструкции, който превръща AI в специалист по определена задача и прави резултата повторяем. Тук е картата на уменията около този проект.</p>
+    <section>
+      <h2>Профили на мислене</h2>
+      <p class="sub">Скала от 0.1 до 1.0: от точно изпълнение до радикални бизнес хипотези. Не е температура на модела, а работен подход, избран за конкретната операция. Маркирани са профилите в този проект.</p>
+      <div class="scale" role="img" aria-label="Скала на профилите от 0.1 до 1.0; в проекта са използвани 0.1, 0.2, 0.4, 0.5, 0.7, 0.9 и 1.0">
+        <div class="on"><div class="bar"></div><div class="n">0.1</div><div class="t">изпълнение</div></div>
+        <div class="on"><div class="bar"></div><div class="n">0.2</div><div class="t">редакция</div></div>
+        <div><div class="bar"></div><div class="n">0.3</div><div class="t">варианти</div></div>
+        <div class="on"><div class="bar"></div><div class="n">0.4</div><div class="t">синтез</div></div>
+        <div class="on"><div class="bar"></div><div class="n">0.5</div><div class="t">избор</div></div>
+        <div><div class="bar"></div><div class="n">0.6</div><div class="t">аналогия</div></div>
+        <div class="hot"><div class="bar"></div><div class="n">0.7</div><div class="t">преформу­лиране</div></div>
+        <div><div class="bar"></div><div class="n">0.8</div><div class="t">комбинации</div></div>
+        <div class="hot"><div class="bar"></div><div class="n">0.9</div><div class="t">сценарии</div></div>
+        <div class="hot"><div class="bar"></div><div class="n">1.0</div><div class="t">бизнес хипотези</div></div>
+      </div>
+      <div class="uses">
+        <div><span class="mono">0.1</span><span>Код, извличане на статистиката, формули</span></div>
+        <div><span class="mono">0.2</span><span>Поправки след проверка</span></div>
+        <div><span class="mono">0.4</span><span>Спецификация от свободно разказана идея</span></div>
+        <div><span class="mono">0.5</span><span>Избор на източници на карти и данни</span></div>
+        <div><span class="mono">0.7</span><span>От продукт към демонстрация</span></div>
+        <div><span class="mono">0.9</span><span>Premortem: сценарии на провал</span></div>
+        <div><span class="mono">1.0</span><span>„Къде липсва?“: пазарната празнина като въпрос</span></div>
+      </div>
+    </section>
 
-    <div class="group">
-      <h3>Използвани в проекта</h3>
-      <div class="skill used"><div><code>belbin-coordinator</code><span class="who-tag">Belbin AI екип</span></div><div><p>Разпредели задачата за НСИ: план, задания, критерии за приемане.</p><span class="out">→ план и task manifest в Drive</span></div></div>
-      <div class="skill used"><div><code>belbin-resource-investigator</code><span class="who-tag">Belbin AI екип</span></div><div><p>Намери и провери източниците в НСИ: годишни и месечни данни за курортите, гъстота, ИНФОСТАТ.</p><span class="out">→ регистър на 8 официални източника</span></div></div>
-      <div class="skill used"><div><code>belbin-completer-finisher</code><span class="who-tag">Belbin AI екип</span></div><div><p>Провери резултата, записа пропуските и не обяви работата за завършена без човешки преглед.</p><span class="out">→ доклад със статус „чака преглед“</span></div></div>
-      <div class="skill used"><div><code>artifact-design</code><span class="who-tag">Claude</span></div><div><p>Визуалната система на интерфейса: палитра, типография, светла и тъмна тема.</p><span class="out">→ интерфейсът на системата и тази страница</span></div></div>
-      <div class="skill used"><div><code>red team · premortem</code><span class="who-tag">Claude, като метод</span></div><div><p>Използвани като задача в разговора, без отделен skill. Намериха пет слабости и седем сценария на провал.</p><span class="out">→ кандидати за самостоятелни skills, виж долу</span></div></div>
-    </div>
+    <section>
+      <h2>Архитектура</h2>
+      <p class="sub">AI участва в проектирането и изграждането. В изчислението не участва: всяко число може да се проследи до източник и правило.</p>
+      <div class="arch">
+        <div class="layers">
+          <div class="layer"><h3>Източници</h3><p>OpenStreetMap (Overpass), НСИ по курортни комплекси, сайтове на обектите (schema.org), CSV списъци</p></div>
+          <div class="layer core"><h3>Детерминистично ядро</h3><p>Геометрия на сградите, обединяване на обекти, модел на площта с калибровка, покритие по контролни проби, ядрова оценка на търсенето</p></div>
+          <div class="layer"><h3>Интерфейс</h3><p>Карта, анализ по бранш, сезонност, „Къде липсва?“, експорт</p></div>
+          <div class="layer"><h3>Човек</h3><p>Цел, решения, проверка на терен, приемане на версията</p></div>
+        </div>
+        <aside class="side">
+          <h3>Слой Creativity OS</h3>
+          <p>Агенти с роли и профили: проектиране, код, събиране на статистиката, red team, premortem.</p>
+          <p>Работи около системата, не вътре в нея. Нула езикови модели по време на изпълнение.</p>
+        </aside>
+      </div>
+    </section>
 
-    <div class="group">
-      <h3>Налични, още неизползвани тук</h3>
-      <div class="skill avail"><div><code>belbin-monitor-evaluator</code><span class="who-tag">Belbin AI екип</span></div><div><p>Да свери числата на НСИ в системата с първоизточника, преди да се покажат пред хора. Това е най-скритият риск от premortem анализа.</p></div></div>
-      <div class="skill avail"><div><code>belbin-specialist</code><span class="who-tag">Belbin AI екип</span></div><div><p>Да извлече наемателите от сайтовете на моловете и локаторите на веригите като CSV за импорт. Така покритието расте без обход на място.</p></div></div>
-      <div class="skill avail"><div><code>belbin-plant</code><span class="who-tag">Belbin AI екип</span></div><div><p>Варианти на нови въпроси, на които картата може да отговаря: сезонност по бранш, сравнение на курортите, пешеходни потоци.</p></div></div>
-      <div class="skill avail"><div><code>belbin-shaper · teamworker · implementer</code><span class="who-tag">Belbin AI екип</span></div><div><p>Отблокиране при отказал източник, обща терминология между AI системите (НСИ ↔ системата) и прилагане на одобрените промени.</p></div></div>
-      <div class="skill avail"><div><code>nlm-director</code><span class="who-tag">собствен skill</span></div><div><p>Концепция за 3-минутно видео или презентация в NotebookLM от тази хронология и демото.</p></div></div>
-      <div class="skill avail"><div><code>digital-artifact-intelligence</code><span class="who-tag">собствен skill</span></div><div><p>Анализ и оптимизация на публикацията, с която се показва демото: каква „валута“ носи, на кого говори, как да работи по-добре.</p></div></div>
-      <div class="skill avail"><div><code>deep-dive-mentor</code><span class="who-tag">собствен skill</span></div><div><p>Курс отвътре: как мислят хората, които избират къде да отворят магазин. Дава езика и въпросите, които системата трябва да обслужва.</p></div></div>
-      <div class="skill avail"><div><code>creativity-os-coordinator</code><span class="who-tag">фирмен skill</span></div><div><p>Фирмена координация: кой AI поема коя част от следващата версия и как се предава работата между системите.</p></div></div>
-    </div>
+    <section>
+      <h2>Какво е изградено</h2>
+      <ul class="done">
+        <li><b>Събиране на обектите</b><span>10 бранша, произволна зона в България, от браузъра</span></li>
+        <li><b>Официална статистика</b><span>НСИ за курортните комплекси: легла, нощувки, заетост, приходи, по години и месеци</span></li>
+        <li><b>Модел на площта</b><span>три метода, диапазон на грешката, калибровка по потвърдени площи</span></li>
+        <li><b>Покритие на данните</b><span>контролни проби на терен, корекция на броя и площта</span></li>
+        <li><b>„Къде липсва?“</b><span>пространствен модел на търсене и предлагане, топ 3 места с обосновка</span></li>
+        <li><b>Проверка</b><span>red team и premortem, поправени слабости, бележки за всяка оценка</span></li>
+        <li><b>Публикуване</b><span>отворен код и публичен адрес, демо данни при отваряне</span></li>
+        <li><b>Независимост</b><span>сменяеми доставчици на карти и данни, без абонаменти</span></li>
+      </ul>
+    </section>
 
-    <div class="group">
-      <h3>Възможни нови skills от този проект</h3>
-      <div class="skill new"><div><code>red-team</code></div><div><p>Пет слабости в проект, подредени по тежест, всяка с ранен сигнал и поправка. Работи за код, план или документ.</p></div></div>
-      <div class="skill new"><div><code>premortem</code></div><div><p>„Минала е година и проектът се е провалил — защо?“ Сценарии, ранни сигнали, три действия за следващите 30 дни.</p></div></div>
-      <div class="skill new"><div><code>nsi-sync</code></div><div><p>Веригата Координатор → Проучвател → Завършител като планирана задача: обновява данните на НСИ всеки месец и сигнализира при промяна.</p></div></div>
-      <div class="skill new"><div><code>teren-proba</code></div><div><p>Подготвя полева проба за покритието: кои участъци да се обходят, какво се брои, как се въвежда в системата.</p></div></div>
-      <div class="skill new"><div><code>demo-script</code></div><div><p>От всеки проект прави сценарий за 3-минутно демо: проблем, „аха“ момент, как е направено, какво следва.</p></div></div>
-    </div>
-  </section>
+    <section>
+      <h2>Указания за работа</h2>
+      <ol class="steps">
+        <li><div><h3>Отвори системата</h3><p>При първо отваряне се зарежда демото: Слънчев бряг с данни от НСИ. Твоите данни остават само в твоя браузър.</p></div></li>
+        <li><div><h3>Избери браншове</h3><p>Отметките вляво филтрират картата, списъка и анализа. Щракни обект за площ, източници и потвърждение на площта.</p></div></li>
+        <li><div><h3>Попитай „Къде липсва?“</h3><p>Избери бранш и „Покажи“. Оцветените зони и трите места са най-силното съотношение гости към обекти.</p></div></li>
+        <li><div><h3>Прочети анализа</h3><p>Под картата: обекти, площ, легла, гости в пика, площ на 1000 гости, сезонност по НСИ.</p></div></li>
+        <li><div><h3>Направи нова зона</h3><p>„+ Нова зона“: готов курорт, търсене на място или текущият изглед на картата.</p></div></li>
+        <li><div><h3>Повиши точността</h3><p>Контролна проба в „Покритие на данните“ и потвърдени площи на познати обекти. Всяка проверка стеснява диапазоните.</p></div></li>
+        <li><div><h3>Пази и споделяй</h3><p>„Експорт“: таблица за Excel или резервно копие, което се зарежда на друг компютър.</p></div></li>
+      </ol>
+    </section>
 
-  <section>
-    <h2>Какво AI не направи</h2>
-    <ul class="honest">
-      <li>Не провери нищо на терен. Покритието на данните и реалните площи изискват човек на място.</li>
-      <li>Данните на НСИ още не са приети от човек. Докладът на AI екипа сам го отбелязва.</li>
-      <li>Claude не можа да отвори истинските карти и данни от своята среда. Първото реално събиране и откриването на блокираната карта станаха при човека, който върна снимка на екрана.</li>
-      <li>Изборите кое да се прави, кое да се отложи и кое да остане демо бяха на човека.</li>
-    </ul>
-  </section>
+    <section>
+      <h2>Принципи</h2>
+      <div class="principles">
+        <div><h3>Всяко число има източник</h3><p>Щом е оценка, системата казва как е получена и колко може да греши.</p></div>
+        <div><h3>Факт, хипотеза, решение</h3><p>Разделени са навсякъде. Хипотезата има начин да бъде опровергана.</p></div>
+        <div><h3>Проверката е независима</h3><p>Самопроверката не е проверка. Съгласието между модели не е доказателство.</p></div>
+        <div><h3>Човекът приема</h3><p>Версията е приета, когато човек я приеме. Не когато AI каже, че е готова.</p></div>
+      </div>
+    </section>
 
-  <footer>Данни: © участниците в OpenStreetMap (ODbL), НСИ. Подложки: Esri, CARTO. Belbin е модел на екипните роли на Meredith Belbin; ролите тук са адаптация за работа на AI с документи.</footer>
+  </div>
 </main>
+
+<footer class="band">
+  <div class="inner">
+    <span><b>Част от Creativity OS · „Креативност“ ЕООД</b></span>
+    <span>Данни: © участниците в OpenStreetMap (ODbL), НСИ. Подложки: Esri, CARTO.</span>
+  </div>
+</footer>
 </body>
 </html>
