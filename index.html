@@ -541,7 +541,8 @@ function parseCSV(text) {
   const head = (rows.shift() || []).map((h) => h.trim().toLowerCase());
   return rows.filter((r) => r.some((x) => x.trim())).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] || "").trim()])));
 }
-const csvCell = (v) => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+// Текст, който започва с = + - @, Excel изпълнява като формула; апострофът отпред го прави обикновен текст
+const csvCell = (v) => { let s = String(v ?? ""); if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 function download(name, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
@@ -1479,6 +1480,9 @@ function errOf(s) {
 }
 // стари данни: добавя полетата за калибровка и прилага новото правило за „по сграда“
 function migrate() {
+  // данни, заредени от файл преди проверката при импорт, минават през нея сега
+  DB.areas = Object.fromEntries(Object.entries(DB.areas).map(([id, a]) => [id, cleanArea(a)]).filter(([, a]) => a));
+  DB.nsi = cleanNsi(DB.nsi);
   for (const a of Object.values(DB.areas)) for (const s of a.shops) {
     if (s.area_model === undefined && !(s.area_true > 0)) { s.area_model = s.area; s.area_method = s.area_conf; }
     if (s.area_conf === "по сграда" && !(s.area_true > 0) && s.area > CATEGORIES[s.cat].size[1] && !/^самостоятелна/.test(s.area_note || "")) {
@@ -1497,6 +1501,90 @@ function confirmArea(s, v) {
   }
   persist(); CAL = calibration();
 }
+
+/* =====================================================================
+   ПРОВЕРКА НА ДАННИ ОТ ФАЙЛ: резервното копие може да е чуждо, затова от него
+   се взимат само познатите полета и само с правилния тип (числата остават числа)
+   ===================================================================== */
+const numV = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+const nonNeg = (v) => numV(v) !== null && v >= 0;
+const strV = (v, max = 300) => (typeof v === "string" ? v.slice(0, max) : "");
+const urlV = (v) => (/^https?:\/\//i.test(strV(v, 2000)) ? strV(v, 2000) : "");
+const arrV = (v) => (Array.isArray(v) ? v : []);
+const ptV = (p) => (Array.isArray(p) && numV(p[0]) !== null && numV(p[1]) !== null ? [p[0], p[1]] : null);
+const bboxV = (b) => (Array.isArray(b) && b.length === 4 && b.every((x) => numV(x) !== null) ? b.slice() : null);
+function cleanShop(s) {
+  if (!s || !CATEGORIES[s.cat] || !strV(s.id) || !ptV([s.lat, s.lon])) return null;
+  const area = numV(s.area) > 0 ? s.area : CATEGORIES[s.cat].size[1], conf = strV(s.area_conf, 40) || "типична";
+  const out = { id: strV(s.id), name: strV(s.name) || "(без име)", brand: strV(s.brand), cat: s.cat, lat: s.lat, lon: s.lon,
+    address: strV(s.address), phone: strV(s.phone, 60), website: strV(s.website, 500), hours: strV(s.hours), mall: strV(s.mall),
+    area, area_conf: conf, area_err: numV(s.area_err) ?? 0.5, area_note: strV(s.area_note),
+    area_model: numV(s.area_model) ?? area, area_method: strV(s.area_method, 40) || conf,
+    sources: arrV(s.sources).map((x) => strV(x, 100)).filter(Boolean), osm_url: urlV(s.osm_url) };
+  const popular = cleanPopular(s.popular); if (popular) out.popular = popular;
+  if (numV(s.area_true) > 0) out.area_true = s.area_true;
+  if (s.prev && numV(s.prev.area) > 0) out.prev = { area: s.prev.area, conf: strV(s.prev.conf, 40), note: strV(s.prev.note) };
+  return out;
+}
+// натовареност по часове от локатора на веригата: {ден: {час: число}}
+function cleanPopular(p) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return null;
+  const days = Object.entries(p).slice(0, 7).map(([d, hours]) => [strV(d, 20), hours && typeof hours === "object" && !Array.isArray(hours)
+    ? Object.fromEntries(Object.entries(hours).filter(([h, v]) => /^\d{1,2}$/.test(h) && numV(+v) !== null).slice(0, 24).map(([h, v]) => [h, +v])) : {}]);
+  return days.length ? Object.fromEntries(days) : null;
+}
+const cleanStay = (h) => {
+  const out = { name: strV(h.name), type: h.type, lat: h.lat, lon: h.lon, beds: h.beds, beds_how: strV(h.beds_how, 40), stars: strV(h.stars, 10) };
+  if (nonNeg(h.bedsOrig)) Object.assign(out, { bedsOrig: h.bedsOrig, howOrig: strV(h.howOrig, 40), starsOrig: strV(h.starsOrig, 10) });
+  if (strV(h.ntrName)) out.ntrName = strV(h.ntrName);
+  if (h.ntrAdded === true) out.ntrAdded = true;
+  return out;
+};
+// запис от Националния туристически регистър (вграден или от CSV)
+function cleanNtrRec(r) {
+  if (!r || !strV(r.name)) return null;
+  const out = { name: strV(r.name), type: strV(r.type, 60), cat: strV(r.cat, 10), addr: strV(r.addr), place: strV(r.place, 100),
+    beds: nonNeg(r.beds) ? r.beds : 0, rooms: nonNeg(r.rooms) ? r.rooms : 0, how: strV(r.how, 4) };
+  if (ptV([r.lat, r.lon])) Object.assign(out, { lat: r.lat, lon: r.lon });
+  if (nonNeg(r.units)) out.units = r.units;
+  if (r.group === true) out.group = true;
+  if (r.noGeo === true) out.noGeo = true;
+  return out;
+}
+const smallObj = (o, keys) => (o && typeof o === "object" ? Object.fromEntries(keys.filter((k) => k in o)
+  .map((k) => [k, typeof o[k] === "string" ? strV(o[k], 200) : numV(o[k])]).filter(([, v]) => v !== null)) : null);
+function cleanArea(a) {
+  const bbox = a && bboxV(a.bbox); if (!bbox) return null;
+  return { name: strV(a.name, 100) || "Зона", bbox, collected: strV(a.collected, 40), nsiResort: strV(a.nsiResort, 100), other_shops: numV(a.other_shops) ?? 0,
+    shops: arrV(a.shops).map(cleanShop).filter(Boolean),
+    stays: arrV(a.stays).filter((h) => h && STAY_TYPES[h.type] && ptV([h.lat, h.lon]) && nonNeg(h.beds))
+      .map(cleanStay),
+    malls: arrV(a.malls).filter((m) => m && ptV([m.lat, m.lon]))
+      .map((m) => ({ name: strV(m.name) || "Търговски център", lat: m.lat, lon: m.lon, area: numV(m.area), poly: arrV(m.poly).map(ptV).filter(Boolean) })),
+    tourism: arrV(a.tourism).filter((r) => r && Number.isInteger(r.year))
+      .map((r) => ({ year: r.year, nights: numV(r.nights) ?? 0, arrivals: numV(r.arrivals) ?? 0, source: strV(r.source, 100) })),
+    samples: arrV(a.samples).filter((x) => x && bboxV(x.bbox) && nonNeg(x.osm) && numV(x.real) > 0)
+      .map((x) => ({ bbox: x.bbox.slice(), osm: x.osm, real: x.real, note: strV(x.note, 100), cats: arrV(x.cats).filter((c) => CATEGORIES[c]), date: strV(x.date, 20) })),
+    ntr: Array.isArray(a.ntr) ? a.ntr.map(cleanNtrRec).filter(Boolean) : null, ntrSource: strV(a.ntrSource, 200),
+    overture: smallObj(a.overture, ["release", "date", "rows", "used", "added", "matched", "error"]),
+    chains: a.chains && typeof a.chains === "object" ? { date: strV(a.chains.date, 40),
+      result: arrV(a.chains.result).map((r) => smallObj(r, ["chain", "found", "added", "matched", "error"])).filter(Boolean) } : null };
+}
+const NSI_FIELDS = new Set(["beds", "bedDays", "places", ...["revenue", "persons", "nights"].flatMap((k) => [k, k + "_bg", k + "_fr"])]);
+function cleanNsi(n) {
+  const obj = (o) => (o && typeof o === "object" ? o : {});
+  const part = (o, re) => Object.fromEntries(Object.entries(obj(o)).filter(([k, v]) => re.test(k) && v && typeof v === "object").map(([k, v]) => [k,
+    Object.fromEntries(Object.entries(v).filter(([f, x]) => (f === "revenue_unit" ? typeof x === "string" : NSI_FIELDS.has(f) && numV(x) !== null))
+      .map(([f, x]) => [f, f === "revenue_unit" ? x.slice(0, 40) : x]))]));
+  const out = {};
+  for (const [resort, R] of Object.entries(obj(n))) {
+    if (!resort.trim() || !R || typeof R !== "object") continue;
+    out[resort.slice(0, 100)] = { annual: part(R.annual, /^\d{4}$/), monthly: part(R.monthly, /^\d{4}-\d{2}$/), quarterly: part(R.quarterly, /^\d{4}-Q[1-4]$/),
+      sources: arrV(R.sources).map(urlV).filter(Boolean) };
+  }
+  return out;
+}
+const areaId = (id) => (/^[\w-]{1,60}$/.test(id) ? id : slug(id));
 
 /* =====================================================================
    ДАННИ ОТ НСИ (CSV файловете от папката „NSI — Черноморски курорти“)
@@ -1547,7 +1635,7 @@ function parseNSI(text, fileName) {
       (R.quarterly[`${year}-Q${sub}`] = R.quarterly[`${year}-Q${sub}`] || {});
     bucket[key] = val;
     if (key.startsWith("revenue")) bucket.revenue_unit = unit;
-    const src = r[kSrc] ? String(r[kSrc]).split("?")[0] : "";
+    const src = r[kSrc] ? urlV(String(r[kSrc]).split("?")[0]) : "";
     if (src && !R.sources.includes(src)) R.sources.push(src);
     seen.add(resort); n++;
   }
@@ -1624,7 +1712,7 @@ function renderAnalysis(list) {
     : `<div class="tile"><div class="l">Легла в зоната</div><div class="v">≈ ${fmt(osmBeds)}</div><div class="s">${fmt(a.stays.length)} места за настаняване${ntrLine || " · оценка от OSM"}</div></div>`;
   const peakTile = useNsi
     ? `<div class="tile"><div class="l">Гости на нощ, пик</div><div class="v">${fmt(peak)}</div><div class="s">средно през ${MONTHS_FULL[S.peak.m - 1]} ${S.Y}, по нощувки от НСИ</div></div>`
-    : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост ${Math.round(state.occ * 100)}%</label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
+    : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост <span id="occPct">${Math.round(state.occ * 100)}%</span></label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
   const countTile = C
     ? `<div class="tile"><div class="l">Обекти</div><div class="v">≈ ${fmt(list.length / C.rate)}</div><div class="s">${fmt(list.length)} на картата · покритие ${Math.round(C.rate * 100)}% по ${C.n} ${C.n === 1 ? "проба" : "проби"}</div></div>`
     : `<div class="tile"><div class="l">Обекти</div><div class="v">поне ${fmt(list.length)}</div><div class="s">толкова познава OSM; реалните са повече — виж „Покритие“</div></div>`;
@@ -1654,7 +1742,11 @@ function renderAnalysis(list) {
     ${R ? nsiCard(a, R, S) : manualCard(a)}
     <p class="note" style="margin:0">Карта: Esri, CARTO. Данни: © участниците в OpenStreetMap (ODbL), НСИ. Безплатните публични услуги са за лична и лека употреба; за работа с клиенти виж Настройки → Карта и данни.</p>`;
 
-  if ($("occ")) $("occ").oninput = (e) => { state.occ = +e.target.value; saveUI(); renderAnalysis(filtered()); };
+  // Докато плъзгачът се влачи, се сменя само процентът; анализът (и с него плъзгачът) се рисува наново при пускане
+  if ($("occ")) {
+    $("occ").oninput = (e) => { $("occPct").textContent = Math.round(e.target.value * 100) + "%"; };
+    $("occ").onchange = (e) => { state.occ = +e.target.value; saveUI(); renderAnalysis(filtered()); $("occ").focus(); };
+  }
   if ($("nsiYear")) $("nsiYear").onchange = (e) => { state.nsiYear = +e.target.value; renderAnalysis(filtered()); };
   if ($("nsiOpen")) $("nsiOpen").onclick = nsiDialog;
   bindCoverage(a, list);
@@ -1798,7 +1890,7 @@ async function collect(id, name, bbox) {
     const osm = await fetchOverpass(bbox, progress);
     const res = processOsm(osm, bbox);
     const prev = DB.areas[id];
-    // запазва ръчно добавените (CSV) обекти и туристическите данни при обновяване
+    // запазва ръчно добавените (CSV) обекти, туристическите данни и пробите за покритие при обновяване
     if (prev) {
       const old = new Map(prev.shops.map((x) => [x.id, x]));
       for (const sh of res.shops) {
@@ -1994,14 +2086,15 @@ function exportDialog() {
       <button class="btn" id="eLoad">Зареди резервно копие</button>
       ${window.DEMO_DATA ? '<button class="btn" id="eDemo">Върни демо данните</button>' : ""}
     </div>
-    <p class="hint" style="margin-top:12px">Данните се пазят в този браузър. Резервното копие ги пренася на друг компютър или браузър.</p>
+    <p class="hint" style="margin-top:12px">Данните се пазят в този браузър. Резервното копие ги пренася на друг компютър или браузър. Настройките (proxy.php, ключът, картата) не влизат в него.</p>
     <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
     <button class="linkbtn" id="eDel" style="color:var(--bad)">Изтрий зоната „${esc(A().name)}“</button>
     <div id="eConfirm"></div>`, () => {
     $("eCsv").onclick = () => download(`${state.area}.csv`, exportCSV(A()), "text/csv");
     $("eAi").onclick = () => download(`analiz-${state.area}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(exportAnalysis(A()), null, 1), "application/json");
     $("eKml").onclick = () => download(`${state.area}.kml`, exportKML(A()), "application/vnd.google-earth.kml+xml");
-    $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(DB), "application/json");
+    // Без настройките: ключът за proxy.php не трябва да тръгва с файла
+    $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ areas: DB.areas, nsi: DB.nsi }), "application/json");
     $("eLoad").onclick = () => $("fileJson").click();
     if ($("eDemo")) $("eDemo").onclick = () => {
       $("eConfirm").innerHTML = `<p class="err">Всички зони в този браузър ще бъдат заменени с демо данните. Ако имаш свои данни, първо направи резервно копие.</p><button class="btn" id="eDemoYes">Да, върни демото</button>`;
@@ -2017,10 +2110,15 @@ $("fileJson").onchange = async (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try {
     const j = JSON.parse(await f.text());
-    if (!j.areas) throw new Error();
-    DB.demo = false; Object.assign(DB.areas, j.areas); if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, j.nsi); if (j.settings) DB.settings = Object.assign(DB.settings, j.settings);
-    persist(); closeModal(); loadArea();
-    toastMeta(`Заредени ${Object.keys(j.areas).length} зони от резервното копие.`);
+    if (!j || !j.areas || typeof j.areas !== "object") throw new Error();
+    // Настройките от файла не се взимат: чужд файл иначе може да пренасочи сайтовете и ключа към свой сървър
+    const areas = Object.entries(j.areas).map(([id, a]) => [areaId(id), cleanArea(a)]).filter(([, a]) => a);
+    if (!areas.length) throw new Error();
+    DB.demo = false; for (const [id, a] of areas) DB.areas[id] = a;
+    if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, cleanNsi(j.nsi));
+    persist(); CAL = calibration(); closeModal(); loadArea();
+    const skipped = Object.keys(j.areas).length - areas.length;
+    toastMeta(`Заредени ${areas.length} зони от резервното копие${skipped ? `, ${skipped} пропуснати (повредени)` : ""}. Настройките не се пренасят.`);
   } catch (err) { toastMeta("Файлът не е резервно копие от тази система."); }
 };
 
