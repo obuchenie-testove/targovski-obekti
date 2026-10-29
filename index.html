@@ -45,9 +45,17 @@ button { font: inherit; cursor: pointer }
 .tabnum { font-variant-numeric: tabular-nums }
 
 .main { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; }
-aside { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; min-height: 0; height: 68vh; overflow-y: auto; }
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); display: flex; flex-direction: column; min-height: 0; height: 68vh; overflow-y: auto; overflow-x: hidden; }
 aside section { padding: 12px 14px; border-bottom: 1px solid var(--line) }
 .cats { display: grid; gap: 2px }
+.grp { border-top: 1px solid var(--line); padding: 2px 0 }
+.grp:first-child { border-top: 0 }
+.grp-h { display: flex; align-items: center; gap: 8px; padding: 4px }
+.grp-h input { margin: 0; accent-color: var(--accent) }
+.grp-t { background: none; border: 0; padding: 0; color: var(--fg); font: 600 13.5px/1.3 var(--font-body); text-align: left; flex: 1; cursor: pointer }
+.grp-t .chev { color: var(--muted); font-size: 11px }
+.grp-h .n { color: var(--muted); font-variant-numeric: tabular-nums }
+.grp-b { padding: 0 0 4px 18px }
 .cat { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 5px; cursor: pointer; }
 .cat:hover { background: var(--chip) }
 .cat input { margin: 0; accent-color: var(--accent) }
@@ -111,6 +119,7 @@ table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-nu
 th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap }
 th:first-child, td:first-child { text-align: left }
 th { color: var(--muted); font-weight: 500; font-size: 12px }
+tr.grp-row td { font-weight: 600; background: var(--chip) }
 td input { width: 110px; padding: 4px 6px }
 .bar { height: 6px; border-radius: 3px; display: flex; overflow: hidden; background: var(--chip); min-width: 80px }
 .bar i { display: block; height: 100% }
@@ -239,18 +248,46 @@ input[type=range] { accent-color: var(--accent); width: 140px }
 /* =====================================================================
    НАСТРОЙКИ: браншове, зони, типични площи
    ===================================================================== */
-const CATEGORIES = {
-  drehi:     { label: "Дрехи",                  color: "#2f6fd6", shop: ["clothes", "fashion", "boutique"],            size: [25, 120, 2500] },
-  obuvki:    { label: "Обувки",                 color: "#8a4fd1", shop: ["shoes"],                                      size: [20, 80, 800] },
-  kozmetika: { label: "Козметика и парфюмерия", color: "#d1477a", shop: ["cosmetics", "perfumery", "chemist"],          size: [20, 70, 600] },
-  studia:    { label: "Козметични студиа",      color: "#e07a2f", shop: ["beauty", "hairdresser", "massage", "tattoo"], size: [12, 45, 300] },
-  bijuta:    { label: "Бижута и часовници",     color: "#b8901a", shop: ["jewelry", "watches"],                          size: [8, 35, 250] },
-  aksesoari: { label: "Чанти и аксесоари",      color: "#6b7a2a", shop: ["bag", "leather", "fashion_accessories"],      size: [10, 40, 300] },
-  sport:     { label: "Спортни стоки",          color: "#1f9a8a", shop: ["sports", "outdoor"],                           size: [30, 200, 3000] },
-  optika:    { label: "Оптика",                 color: "#4a5bb8", shop: ["optician"],                                    size: [15, 50, 250] },
-  detski:    { label: "Детски стоки и играчки", color: "#c4512d", shop: ["baby_goods", "toys"],                          size: [20, 80, 1500] },
-  suveniri:  { label: "Сувенири и подаръци",    color: "#7d6655", shop: ["gift", "souvenir"],                            size: [6, 30, 300] },
+// Общи категории (групи) и браншове. shop/amenity/office са таговете в OpenStreetMap; size = мин., типична, макс. площ в м²
+const GROUPS = {
+  moda:     { label: "Мода и аксесоари" },
+  krasota:  { label: "Красота и здраве" },
+  hrana:    { label: "Храни и напитки" },
+  zavedenia:{ label: "Заведения" },
+  dom:      { label: "Дом, техника и книги" },
+  svobodno: { label: "Спорт, деца и сувенири" },
+  uslugi:   { label: "Услуги" },
 };
+const CATEGORIES = {
+  drehi:      { g: "moda",      label: "Дрехи",                   color: "#2f6fd6", shop: ["clothes", "fashion", "boutique"],                       size: [25, 120, 2500] },
+  obuvki:     { g: "moda",      label: "Обувки",                  color: "#5b8def", shop: ["shoes"],                                                 size: [20, 80, 800] },
+  bijuta:     { g: "moda",      label: "Бижута и часовници",      color: "#1c4fa8", shop: ["jewelry", "watches"],                                     size: [8, 35, 250] },
+  aksesoari:  { g: "moda",      label: "Чанти и аксесоари",       color: "#7aa7f5", shop: ["bag", "leather", "fashion_accessories"],                 size: [10, 40, 300] },
+  kozmetika:  { g: "krasota",   label: "Козметика и парфюмерия",  color: "#d1477a", shop: ["cosmetics", "perfumery", "chemist"],                     size: [20, 70, 600] },
+  studia:     { g: "krasota",   label: "Козметични студиа",       color: "#e86f9d", shop: ["beauty", "hairdresser", "massage", "tattoo", "nails"],   size: [12, 45, 300] },
+  optika:     { g: "krasota",   label: "Оптика",                  color: "#a8325e", shop: ["optician"],                                               size: [15, 50, 250] },
+  apteki:     { g: "krasota",   label: "Аптеки",                  color: "#f19bbd", amenity: ["pharmacy"], shop: ["pharmacy"],                        size: [30, 80, 300] },
+  hrana:      { g: "hrana",     label: "Супермаркети и хранителни", color: "#2b8a3e", shop: ["supermarket", "convenience", "grocery", "greengrocer", "butcher", "deli", "frozen_food"], size: [30, 150, 3000] },
+  pekarni:    { g: "hrana",     label: "Пекарни и сладкарници",   color: "#69b34c", shop: ["bakery", "pastry", "confectionery", "chocolate"], amenity: ["ice_cream"], size: [15, 50, 300] },
+  alkohol:    { g: "hrana",     label: "Алкохол и тютюн",         color: "#1b5e2a", shop: ["alcohol", "wine", "beverages", "tobacco", "e-cigarette"], size: [15, 50, 400] },
+  restoranti: { g: "zavedenia", label: "Ресторанти",              color: "#c2410c", amenity: ["restaurant", "food_court"],                          size: [60, 180, 1500] },
+  barzo:      { g: "zavedenia", label: "Бързо хранене",           color: "#f97316", amenity: ["fast_food"],                                          size: [20, 60, 400] },
+  kafeneta:   { g: "zavedenia", label: "Кафенета",                color: "#fb923c", amenity: ["cafe"],                                               size: [25, 70, 400] },
+  barove:     { g: "zavedenia", label: "Барове и клубове",        color: "#9a3412", amenity: ["bar", "pub", "nightclub"],                           size: [40, 120, 1500] },
+  elektronika:{ g: "dom",       label: "Електроника и телефони",  color: "#7c3aed", shop: ["electronics", "mobile_phone", "computer", "appliance"], size: [20, 80, 2000] },
+  dom:        { g: "dom",       label: "Дом и подаръчни стоки",   color: "#a78bfa", shop: ["houseware", "furniture", "interior_decoration", "variety_store", "hardware", "doityourself"], size: [30, 150, 4000] },
+  knigi:      { g: "dom",       label: "Книги, вестници, канцелария", color: "#5b21b6", shop: ["books", "newsagent", "stationery", "kiosk"],         size: [6, 30, 400] },
+  cvetya:     { g: "dom",       label: "Цветя",                   color: "#c4b5fd", shop: ["florist", "garden_centre"],                              size: [10, 30, 300] },
+  sport:      { g: "svobodno",  label: "Спортни стоки",           color: "#0f766e", shop: ["sports", "outdoor", "bicycle", "swimming_pool", "fishing"], size: [30, 200, 3000] },
+  detski:     { g: "svobodno",  label: "Детски стоки и играчки",  color: "#14b8a6", shop: ["baby_goods", "toys"],                                    size: [20, 80, 1500] },
+  suveniri:   { g: "svobodno",  label: "Сувенири и подаръци",     color: "#5eead4", shop: ["gift", "souvenir", "art", "craft"],                       size: [6, 30, 300] },
+  obmyana:    { g: "uslugi",    label: "Обмяна, банки, банкомати", color: "#78716c", amenity: ["bureau_de_change", "bank", "atm"], shop: ["money_lender", "pawnbroker"], size: [4, 40, 400] },
+  turizam:    { g: "uslugi",    label: "Туристически агенции и коли под наем", color: "#a8a29e", shop: ["travel_agency"], amenity: ["car_rental", "bicycle_rental", "boat_rental"], office: ["travel_agent"], size: [10, 35, 200] },
+  drugi_usl:  { g: "uslugi",    label: "Пране, фото, ремонти",    color: "#57534e", shop: ["laundry", "dry_cleaning", "photo", "copyshop", "tailor", "shoe_repair", "repair"], size: [10, 35, 200] },
+};
+const CAT_AMENITY = [...new Set(Object.values(CATEGORIES).flatMap((c) => c.amenity || []))];
+const CAT_OFFICE = [...new Set(Object.values(CATEGORIES).flatMap((c) => c.office || []))];
+const catsOfGroup = (g) => Object.keys(CATEGORIES).filter((c) => CATEGORIES[c].g === g);
 const STAY_TYPES = { hotel: [150, 4], apartment: [4, 1], guest_house: [20, 2], hostel: [30, 2], motel: [30, 2], chalet: [6, 1] };
 const PRESETS = {
   "slanchev-bryag": ["Слънчев бряг",     [42.672, 27.695, 42.722, 27.727]],
@@ -336,7 +373,7 @@ class PolyIndex {
 function overpassQuery(b) {
   const bb = b.join(","), stay = Object.keys(STAY_TYPES).join("|");
   return `[out:json][timeout:180];
-nwr["shop"](${bb})->.shops;
+(nwr["shop"](${bb}); nwr["amenity"~"^(${CAT_AMENITY.join("|")})$"](${bb}); nwr["office"~"^(${CAT_OFFICE.join("|")})$"](${bb});)->.shops;
 nwr["tourism"~"^(${stay})$"](${bb})->.stay;
 .shops out geom;
 .stay out geom;
@@ -383,7 +420,11 @@ function shapeOf(el) {
   }
   return null;
 }
-function categoryOf(t) { for (const [id, c] of Object.entries(CATEGORIES)) if (c.shop.includes(t.shop)) return id; return null; }
+function categoryOf(t) {
+  for (const [id, c] of Object.entries(CATEGORIES))
+    if ((t.shop && (c.shop || []).includes(t.shop)) || (t.amenity && (c.amenity || []).includes(t.amenity)) || (t.office && (c.office || []).includes(t.office))) return id;
+  return null;
+}
 function addressOf(t) {
   const st = [t["addr:street"], t["addr:housenumber"]].filter(Boolean).join(" ");
   return [st, t["addr:city"] || t["addr:place"]].filter(Boolean).join(", ");
@@ -400,7 +441,7 @@ function processOsm(osm, bbox) {
     if (!sh) continue;
     const [lat, lon, poly] = sh;
     if (t.shop === "mall") { if (!seen.has(key)) malls.push({ name: t.name || "Търговски център", lat, lon, poly, area: poly ? Math.round(polyArea(poly, lat0)) : null }); seen.add(key); continue; }
-    if (t.shop) { if (seen.has(key)) continue; seen.add(key); shops.push({ el, t, lat, lon, poly, cat: categoryOf(t) }); }
+    if (t.shop || CAT_AMENITY.includes(t.amenity) || CAT_OFFICE.includes(t.office)) { if (seen.has(key)) continue; seen.add(key); shops.push({ el, t, lat, lon, poly, cat: categoryOf(t) }); }
     else if (STAY_TYPES[t.tourism]) { if (seen.has(key)) continue; seen.add(key); stays.push({ el, t, lat, lon, poly }); }
     if (t.building && poly && !seen.has("b" + el.id)) { seen.add("b" + el.id); blds.push({ t, poly, area: polyArea(poly, lat0), shops: 0 }); }
   }
@@ -580,7 +621,7 @@ async function enrichArea(a, onStep) {
 /* =====================================================================
    ИНТЕРФЕЙС
    ===================================================================== */
-const state = { area: DB.ui.area, cats: new Set(Object.keys(CATEGORIES)), brand: "", chains: false, inmall: false, showstay: false, sel: null, occ: DB.ui.occ || 0.8, busy: false };
+const state = { area: DB.ui.area, openGroups: new Set(["moda"]), cats: new Set(Object.keys(CATEGORIES)), brand: "", chains: false, inmall: false, showstay: false, sel: null, occ: DB.ui.occ || 0.8, busy: false };
 let map, shopLayer, stayLayer, mallLayer;
 
 function initMap() {
@@ -660,7 +701,18 @@ function loadArea(fit = true) {
 
 function renderCats() {
   const per = {}; (A()?.shops || []).forEach((s) => per[s.cat] = (per[s.cat] || 0) + 1);
-  $("cats").innerHTML = Object.entries(CATEGORIES).map(([id, c]) => `<label class="cat"><input type="checkbox" id="cat-${id}" data-c="${id}" ${state.cats.has(id) ? "checked" : ""}><span class="dot" style="background:${c.color}"></span>${esc(c.label)}<span class="n">${per[id] || 0}</span></label>`).join("");
+  $("cats").innerHTML = Object.entries(GROUPS).map(([g, G]) => {
+    const ids = catsOfGroup(g), on = ids.filter((c) => state.cats.has(c)).length, n = ids.reduce((t, c) => t + (per[c] || 0), 0);
+    const open = state.openGroups.has(g);
+    return `<div class="grp">
+      <div class="grp-h"><input type="checkbox" data-g="${g}" id="grp-${g}" aria-label="${esc(G.label)}" ${on === ids.length ? "checked" : ""} ${on && on < ids.length ? 'data-mixed="1"' : ""}>
+        <button class="grp-t" data-open="${g}" aria-expanded="${open}">${esc(G.label)} <span class="chev">${open ? "▾" : "▸"}</span></button><span class="n">${n}</span></div>
+      ${open ? `<div class="grp-b">${ids.map((id) => { const c = CATEGORIES[id]; return `<label class="cat"><input type="checkbox" id="cat-${id}" data-c="${id}" ${state.cats.has(id) ? "checked" : ""}><span class="dot" style="background:${c.color}"></span>${esc(c.label)}<span class="n">${per[id] || 0}</span></label>`; }).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+  $("cats").querySelectorAll("[data-mixed]").forEach((i) => i.indeterminate = true);
+  $("cats").querySelectorAll("[data-g]").forEach((i) => i.onchange = () => { catsOfGroup(i.dataset.g).forEach((c) => i.checked ? state.cats.add(c) : state.cats.delete(c)); renderCats(); render(); });
+  $("cats").querySelectorAll("[data-open]").forEach((b) => b.onclick = () => { const g = b.dataset.open; state.openGroups.has(g) ? state.openGroups.delete(g) : state.openGroups.add(g); renderCats(); });
   $("cats").querySelectorAll("input").forEach((i) => i.onchange = () => { i.checked ? state.cats.add(i.dataset.c) : state.cats.delete(i.dataset.c); render(); });
 }
 
@@ -720,11 +772,14 @@ function select(id, fly) {
    ===================================================================== */
 const OPP = { R: 400, SIGMA: 250, CELL: 100 }; // радиус и мащаб в метри
 const opp = { on: false, cat: null, prevCats: null, layer: null, spots: [] };
+const oppCats = (v) => v.startsWith("g:") ? catsOfGroup(v.slice(2)) : [v];
+const oppLabel = (v) => v.startsWith("g:") ? GROUPS[v.slice(2)].label : CATEGORIES[v].label;
 function oppCompute(a, cat) {
   const lat0 = (a.bbox[0] + a.bbox[2]) / 2, xy = (la, lo) => toXY(la, lo, lat0);
   const stays = a.stays.map((h) => ({ p: xy(h.lat, h.lon), beds: h.beds }));
-  const shops = a.shops.filter((s) => s.cat === cat).map((s) => ({ s, p: xy(s.lat, s.lon) }));
-  const typ = CATEGORIES[cat].size[1];
+  const set = oppCats(cat);
+  const shops = a.shops.filter((s) => set.includes(s.cat)).map((s) => ({ s, p: xy(s.lat, s.lon) }));
+  const typ = set.reduce((t, c) => t + CATEGORIES[c].size[1], 0) / set.length;
   const R = nsiFor(a), S = R ? nsiSummary(R) : null, osmBeds = stays.reduce((t, h) => t + h.beds, 0);
   const scale = S && S.y.beds && osmBeds ? S.y.beds / osmBeds : 1; // разпределение по OSM, общо по НСИ
   const dLat = OPP.CELL / 110540, dLon = OPP.CELL / (111320 * Math.cos(lat0 * Math.PI / 180));
@@ -758,7 +813,7 @@ function oppRender() {
   r.spots.forEach((c, i) => L.marker([c.la, c.lo], { icon: L.divIcon({ className: "", html: `<div class="opp-pin">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
     .on("click", () => oppFocus(i)).addTo(opp.layer));
   opp.spots = r.spots;
-  const lbl = CATEGORIES[opp.cat].label.toLowerCase();
+  const lbl = oppLabel(opp.cat).toLowerCase();
   const why = (c) => `≈ ${fmt(c.near)} легла в радиус ${OPP.R} м · ${c.cnt ? c.cnt + " " + (c.cnt === 1 ? "обект" : "обекта") + " от бранша" : "нито един обект от бранша"}${c.nearest ? ` · най-близкият на ${fmt(c.nd)} м (${esc(c.nearest.name)})` : ""}`;
   $("opp").innerHTML = `<button class="close" aria-label="Затвори" id="oppClose">×</button>
     <h3>Къде липсва: ${esc(lbl)}</h3>
@@ -775,7 +830,7 @@ function oppFocus(i) { const c = opp.spots[i]; if (c) map.setView([c.la, c.lo], 
 function oppOn(cat) {
   if (LY.mode) lyOff();
   if (!opp.on) opp.prevCats = new Set(state.cats);
-  opp.on = true; opp.cat = cat; state.cats = new Set([cat]);
+  opp.on = true; opp.cat = cat; state.cats = new Set(oppCats(cat));
   stayLayer.addTo(map); $("showstay").checked = true; state.showstay = true;
   $("detail").hidden = true; $("oppBtn").textContent = "Скрий";
   renderCats(); render(); oppRender();
@@ -851,7 +906,7 @@ function hotelsRender(a) {
   if (sel) {
     const R0 = 400, near = a.shops.map((s) => ({ s, d: distM([s.lat, s.lon], [sel.lat, sel.lon]) })).filter((x) => x.d <= R0).sort((x, y) => x.d - y.d);
     const per = {}; near.forEach((x) => per[x.s.cat] = (per[x.s.cat] || 0) + 1);
-    const missing = Object.keys(CATEGORIES).filter((c) => !per[c]).map((c) => CATEGORIES[c].label.toLowerCase());
+    const missing = Object.keys(CATEGORIES).filter((c) => !per[c] && c !== "obmyana" && c !== "drugi_usl").map((c) => CATEGORIES[c].label.toLowerCase());
     const { occ } = guestsByStay(a, LY.month), g = sel.beds * occ;
     L.circle([sel.lat, sel.lon], { radius: R0, color: "#5b4bb3", weight: 1.5, fillOpacity: 0.06, dashArray: "5 4", interactive: false }).addTo(LY.layer);
     L.circleMarker([sel.lat, sel.lon], { radius: 8, color: "#fff", weight: 2, fillColor: "#5b4bb3", fillOpacity: 1 }).addTo(LY.layer);
@@ -1052,7 +1107,7 @@ function lyInit() {
 }
 
 function oppInit() {
-  $("oppCat").innerHTML = Object.entries(CATEGORIES).map(([id, c]) => `<option value="${id}">${esc(c.label)}</option>`).join("");
+  $("oppCat").innerHTML = Object.entries(GROUPS).map(([g, G]) => `<optgroup label="${esc(G.label)}"><option value="g:${g}">${esc(G.label)}: всички</option>${catsOfGroup(g).map((id) => `<option value="${id}">${esc(CATEGORIES[id].label)}</option>`).join("")}</optgroup>`).join("");
   $("oppCat").value = "obuvki";
   $("oppBtn").onclick = () => opp.on && opp.cat === $("oppCat").value ? oppOff() : oppOn($("oppCat").value);
   $("oppCat").onchange = () => { if (opp.on) oppOn($("oppCat").value); };
@@ -1389,8 +1444,9 @@ function renderAnalysis(list) {
     <div class="cols">
       <div class="card"><h2>По бранш</h2><div class="scroll"><table>
         <thead><tr><th>Бранш</th><th>Обекти</th><th>Площ м²</th><th>Средно м²</th><th title="търговска площ на 1000 гости на нощ в пика">м² / 1000 гости</th><th>Точност на площта</th></tr></thead>
-        <tbody>${rows.map((r) => `<tr><td><span class="dot" style="background:${CATEGORIES[r.c].color};margin-right:6px"></span>${esc(CATEGORIES[r.c].label)}</td><td>${r.n}</td><td>${fmt(r.ar)}</td><td>${fmt(r.avg)}</td><td>${peak > 0 ? fmt(r.dens) : "—"}</td>
-          <td><div class="bar" title="измерена ${r.q.m} · по сграда ${r.q.b} · типична ${r.q.t}"><i style="width:${r.q.m / r.n * 100}%;background:var(--accent)"></i><i style="width:${r.q.b / r.n * 100}%;background:color-mix(in srgb, var(--accent) 45%, var(--chip))"></i><i style="width:${r.q.t / r.n * 100}%;background:var(--warn);opacity:.55"></i></div></td></tr>`).join("") || '<tr><td colspan="6">Няма обекти.</td></tr>'}</tbody>
+        <tbody>${Object.keys(GROUPS).map((g) => { const rs = rows.filter((r) => CATEGORIES[r.c].g === g); if (!rs.length) return ""; const n = rs.reduce((t, r) => t + r.n, 0), ar = rs.reduce((t, r) => t + r.ar, 0), dn = rs.reduce((t, r) => t + r.dens, 0);
+          return `<tr class="grp-row"><td>${esc(GROUPS[g].label)}</td><td>${n}</td><td>${fmt(ar)}</td><td>${fmt(n ? ar / n : 0)}</td><td>${peak > 0 ? fmt(dn) : "—"}</td><td></td></tr>` + rs.map((r) => `<tr><td style="padding-left:18px"><span class="dot" style="background:${CATEGORIES[r.c].color};margin-right:6px"></span>${esc(CATEGORIES[r.c].label)}</td><td>${r.n}</td><td>${fmt(r.ar)}</td><td>${fmt(r.avg)}</td><td>${peak > 0 ? fmt(r.dens) : "—"}</td>
+          <td><div class="bar" title="измерена ${r.q.m} · по сграда ${r.q.b} · типична ${r.q.t}"><i style="width:${r.q.m / r.n * 100}%;background:var(--accent)"></i><i style="width:${r.q.b / r.n * 100}%;background:color-mix(in srgb, var(--accent) 45%, var(--chip))"></i><i style="width:${r.q.t / r.n * 100}%;background:var(--warn);opacity:.55"></i></div></td></tr>`).join(""); }).join("") || '<tr><td colspan="6">Няма обекти.</td></tr>'}</tbody>
       </table></div>
       <p class="note">Точност: тъмно — измерена от контура или потвърдена; светло — изведена от сградата; оранжево — типична площ за бранша (най-груба оценка). „м² / 1000 гости“ показва колко търговска площ от бранша се пада на 1000 гости в пика; полезно е за сравнение между зони и браншове${useNsi ? ". Гостите са за курорта в границите на НСИ, а обектите — за зоната на картата; сравнявай само зони, които съвпадат с курорта" : ""}.</p>
       ${calibrationTable()}</div>
