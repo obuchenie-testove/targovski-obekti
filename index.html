@@ -292,6 +292,9 @@ const CAT_AMENITY = [...new Set(Object.values(CATEGORIES).flatMap((c) => c.ameni
 const CAT_OFFICE = [...new Set(Object.values(CATEGORIES).flatMap((c) => c.office || []))];
 const catsOfGroup = (g) => Object.keys(CATEGORIES).filter((c) => CATEGORIES[c].g === g);
 const STAY_TYPES = { hotel: [150, 4], apartment: [4, 1], guest_house: [20, 2], hostel: [30, 2], motel: [30, 2], chalet: [6, 1] };
+// Справочниците без прототип: бранш „constructor“ или „__proto__“ от CSV, резервно копие или таг в OSM иначе минава
+// проверката CATEGORIES[x] и после спира целия импорт или събиране
+Object.setPrototypeOf(CATEGORIES, null); Object.setPrototypeOf(STAY_TYPES, null);
 const PRESETS = {
   "slanchev-bryag": ["Слънчев бряг",     [42.672, 27.695, 42.722, 27.727]],
   "nesebar":        ["Несебър",          [42.648, 27.705, 42.667, 27.745]],
@@ -548,7 +551,7 @@ function download(name, text, type) {
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
-const LABEL_TO_CAT = Object.fromEntries(Object.entries(CATEGORIES).map(([k, v]) => [v.label.toLowerCase(), k]));
+const LABEL_TO_CAT = Object.assign(Object.create(null), Object.fromEntries(Object.entries(CATEGORIES).map(([k, v]) => [v.label.toLowerCase(), k])));
 const COL = { name: ["name", "име"], brand: ["brand", "марка"], category: ["category", "бранш"], lat: ["lat", "ширина"], lon: ["lon", "lng", "дължина"],
   address: ["address", "адрес"], phone: ["phone", "телефон"], website: ["website", "сайт"], hours: ["hours", "работно време"], mall: ["mall", "мол"],
   area_m2: ["area_m2", "площ м²", "площ"], source: ["source", "източник", "източници"] };
@@ -1460,7 +1463,7 @@ function popularChart(p) {
    КАЛИБРОВКА НА ПЛОЩТА: сравнява модела с потвърдените реални площи
    ===================================================================== */
 const METHODS = ["измерена", "по сграда", "типична"];
-const DEFAULT_ERR = { "измерена": 0.1, "по сграда": 0.35, "типична": 0.5, "от източника": 0.1, "от сайта": 0.1, "потвърдена": 0.03 };
+const DEFAULT_ERR = { __proto__: null, "измерена": 0.1, "по сграда": 0.35, "типична": 0.5, "от източника": 0.1, "от сайта": 0.1, "потвърдена": 0.03 };
 const CAL_MIN = 5; // от колко потвърждения нататък грешката на метода се взима от реалните данни
 function median(xs) { const v = [...xs].sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
 function calibration() {
