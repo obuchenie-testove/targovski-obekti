@@ -205,6 +205,7 @@ input[type=range] { accent-color: var(--accent); width: 140px }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="demo/demo.js"></script>
+<script src="data/ntr.js"></script>
 <script>
 "use strict";
 /* =====================================================================
@@ -422,7 +423,7 @@ function processOsm(osm, bbox) {
   return {
     shops: records,
     other_shops: shops.filter((s) => !s.cat).length,
-    stays: stays.map((st) => { const [b, how] = beds(st); return { name: st.t.name || "", type: st.t.tourism, lat: +st.lat.toFixed(6), lon: +st.lon.toFixed(6), beds: b, beds_how: how }; }),
+    stays: stays.map((st) => { const [b, how] = beds(st); return { name: st.t.name || st.t["name:bg"] || st.t["name:en"] || "", names: [...new Set([st.t.name, st.t["name:bg"], st.t["name:en"], st.t.alt_name, st.t.old_name].filter(Boolean))], type: st.t.tourism, lat: +st.lat.toFixed(6), lon: +st.lon.toFixed(6), beds: b, beds_how: how }; }),
     malls: malls.map((m) => ({ name: m.name, lat: m.lat, lon: m.lon, area: m.area, poly: (m.poly || []).map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]) })),
   };
 }
@@ -609,6 +610,7 @@ function fillAreaSelect() {
 
 function loadArea(fit = true) {
   fillAreaSelect();
+  ntrAuto(A());
   shopLayer.clearLayers(); stayLayer.clearLayers(); mallLayer.clearLayers();
   const a = A();
   if (!a) { $("list").innerHTML = ""; $("cats").innerHTML = ""; $("analysis").innerHTML = ""; toastMeta(""); return; }
@@ -776,7 +778,7 @@ function ntrPick(row, k) {
   return "";
 }
 // \b не работи с кирилица, затова границите на думите са изрично „не-буква“
-const NTR_STOP = /(^|[^\p{L}])(апартхотел|aparthotel|хотел|hotel|апарт|apart|семеен|family|комплекс|complex|клуб|club|спа|spa|резорт|resort|бутиков|boutique|къща за гости|guest house|вила|villa)(?=[^\p{L}]|$)/giu;
+const NTR_STOP = /(^|[^\p{L}])(апартхотел|aparthotel|хотел|hotel|апарт|apart|семеен|family|комплекс|complex|клуб|club|спа|spa|резорт|ризорт|resort|фемили|бутиков|boutique|къща за гости|guest house|вила|villa)(?=[^\p{L}]|$)/giu;
 const hnorm = (s) => norm(String(s || "").toLowerCase().replace(/["„“'«»]/g, " ").replace(NTR_STOP, "$1 ").replace(NTR_STOP, "$1 "));
 function parseNtr(text) {
   return parseCSV(text).map((r) => ({
@@ -784,23 +786,63 @@ function parseNtr(text) {
     addr: ntrPick(r, "addr"), place: ntrPick(r, "place"), type: ntrPick(r, "type"),
   })).filter((r) => r.name && (r.beds || r.rooms));
 }
+// Звуков „скелет“ на името: кирилица и латиница дават един и същ ключ
+// („МЕЛИА СЪНИ БИЙЧ“ и „Melia Sunny Beach“ → mlsnbch; „МАДЖЕСТИК“ и „Majestic“ → mdzhstk)
+function skel(s) {
+  let x = String(s || "").toLowerCase().replace(/["„“'«»`]/g, " ").replace(NTR_STOP, "$1 ").replace(NTR_STOP, "$1 ");
+  x = [...x].map((c) => TR[c] ?? c).join("");
+  x = x.replace(/ph/g, "f").replace(/th/g, "t").replace(/ck/g, "k").replace(/c(?=[eiy])/g, "s").replace(/c/g, "k")
+       .replace(/q/g, "k").replace(/w/g, "v").replace(/x/g, "ks").replace(/j/g, "dzh");
+  return x.replace(/[^a-z0-9]/g, "").replace(/[aeiouy]/g, "").replace(/(.)\1+/g, "$1");
+}
 function ntrMatch(a, rec) {
-  const n = hnorm(rec.name); if (n.length < 3) return null;
-  const cands = a.stays.filter((h) => { const m = hnorm(h.name); return m.length >= 3 && (m === n || (Math.min(m.length, n.length) >= 5 && (m.includes(n) || n.includes(m)))); });
-  return cands.find((h) => hnorm(h.name) === n) || cands[0] || null;
+  // двуезични имена в регистъра („ИМПЕРИАЛ ПАЛАС/IMPERIAL PALACE“) се сравняват по части
+  const keys = [...new Set([rec.name, ...String(rec.name).split("/")].map(skel))].filter((k) => k.length >= 3);
+  if (!keys.length) return null;
+  let best = null;
+  for (const h of a.stays) {
+    if (h.ntrAdded) continue;
+    for (const nm of (h.names && h.names.length ? h.names : [h.name])) {
+      const m = skel(nm); if (m.length < 3) continue;
+      for (const n of keys) {
+        if (m === n) return h;
+        // само точно съвпадение: частичното даваше грешни двойки („Iberostar Sunny Beach“ ↔ „Астериа Съни Бийч“);
+        // несвързаните обекти се търсят по адрес
+      }
+    }
+  }
+  return best;
+}
+// връща хотелите от картата към оценките отпреди регистъра (за повторно прилагане или махане)
+function ntrReset(a) {
+  a.stays = a.stays.filter((h) => !h.ntrAdded);
+  for (const h of a.stays) if (h.beds_how === "НТР" && h.bedsOrig != null) { h.beds = h.bedsOrig; h.beds_how = h.howOrig; h.stars = h.starsOrig || ""; delete h.ntrName; }
+}
+function ntrSet(h, beds, rec) {
+  if (h.bedsOrig == null) { h.bedsOrig = h.beds; h.howOrig = h.beds_how; h.starsOrig = h.stars || ""; }
+  Object.assign(h, { beds, beds_how: "НТР", stars: rec.cat ? rec.cat + "*" : h.starsOrig || "", ntrName: rec.name });
 }
 function applyNtr(a) {
-  const st = { matched: 0, located: 0, unmatched: [] };
-  a.stays = a.stays.filter((h) => !h.ntrAdded);
+  const st = { matched: 0, located: 0, unmatched: [], nogeo: 0, nogeoBeds: 0 }, done = new Set();
+  ntrReset(a);
   for (const rec of a.ntr || []) {
     const beds = rec.beds || rec.rooms * 2;
     const h = ntrMatch(a, rec);
-    if (h) { Object.assign(h, { beds, beds_how: "НТР", stars: rec.cat || h.stars || "", ntrName: rec.name }); st.matched++; continue; }
+    if (rec.group) { if (rec.lat != null) { a.stays.push({ name: rec.name, type: "apartment", lat: rec.lat, lon: rec.lon, beds, beds_how: "НТР", stars: "", ntrAdded: true }); st.located++; } else if (!rec.noGeo && rec.addr) st.unmatched.push(rec); else { st.nogeo++; st.nogeoBeds += beds; } continue; }
+    if (h) {
+      // няколко удостоверения за един хотел (отделни сгради или категории): леглата се събират
+      if (done.has(h)) h.beds += beds; else ntrSet(h, beds, rec);
+      done.add(h); st.matched++; continue;
+    }
+    if (rec.lat != null && rec.how === "n") {
+      const near = a.stays.filter((x) => !x.ntrAdded && (x.beds_how !== "НТР" || done.has(x))).map((x) => [x, distM([x.lat, x.lon], [rec.lat, rec.lon])]).filter((p) => p[1] < 60).sort((p, q) => p[1] - q[1])[0];
+      if (near) { if (done.has(near[0])) near[0].beds += beds; else ntrSet(near[0], beds, rec); done.add(near[0]); st.matched++; continue; }
+    }
     if (rec.lat != null) {
-      a.stays.push({ name: rec.name, type: "hotel", lat: rec.lat, lon: rec.lon, beds, beds_how: "НТР", stars: rec.cat || "", ntrAdded: true });
+      a.stays.push({ name: rec.name, type: "hotel", lat: rec.lat, lon: rec.lon, beds, beds_how: "НТР", stars: rec.cat ? rec.cat + "*" : "", ntrAdded: true });
       st.located++; continue;
     }
-    if (!rec.noGeo) st.unmatched.push(rec);
+    if (!rec.noGeo) st.unmatched.push(rec); else { st.nogeo++; st.nogeoBeds += beds; }
   }
   return st;
 }
@@ -808,23 +850,33 @@ async function ntrGeocode(a, recs, onStep) {
   let found = 0, i = 0;
   for (const rec of recs) {
     onStep(`Търсене на адресите: ${++i} от ${recs.length}`);
-    const q = [rec.addr, rec.place || a.name].filter(Boolean).join(", ");
+    const q = [rec.addr || rec.name, rec.place || a.name].filter(Boolean).join(", ");
     try {
       const r = await fetch("https://nominatim.openstreetmap.org/search?" + new URLSearchParams({ q, format: "json", limit: 1, countrycodes: "bg",
         viewbox: [a.bbox[1], a.bbox[2], a.bbox[3], a.bbox[0]].join(","), bounded: 1 }));
       const j = await r.json();
-      if (j.length) { rec.lat = +(+j[0].lat).toFixed(6); rec.lon = +(+j[0].lon).toFixed(6); found++; } else rec.noGeo = true;
+      if (j.length) { rec.lat = +(+j[0].lat).toFixed(6); rec.lon = +(+j[0].lon).toFixed(6); rec.how = rec.addr ? "a" : "n"; found++; } else rec.noGeo = true;
     } catch (e) { rec.noGeo = true; }
     await sleep(1100); // правилата на Nominatim: до 1 заявка в секунда
   }
   return found;
 }
+function ntrBuiltinFor(a) {
+  const B = window.NTR_BUILTIN || {}, x = norm(a.name);
+  return Object.values(B).find((b) => { const y = norm(b.place); return y && (x.includes(y) || y.includes(x)); }) || null;
+}
+function ntrAuto(a) {
+  if (!a || a.ntr) return;
+  const b = ntrBuiltinFor(a); if (!b) return;
+  a.ntr = JSON.parse(JSON.stringify(b.recs)); a.ntrSource = b.source + " (" + b.retrieved + ")";
+  applyNtr(a); persist();
+}
 function ntrDialog() {
   const a = A(); if (!a) return;
   const draw = (msg) => {
-    const st = a.ntr ? applyNtr(a) : null;
+    const st = a.ntr && a.ntr.length ? applyNtr(a) : null;
     if (st) persist();
-    $("ntrBody").innerHTML = (msg || "") + (st ? `<p class="ok">Регистър: ${a.ntr.length} обекта. Свързани с хотел на картата: ${st.matched}. Намерени по адрес: ${st.located}. Без място на картата: ${st.unmatched.length}.</p>
+    $("ntrBody").innerHTML = (msg || "") + (st ? `${a.ntrSource ? `<p class="hint" style="margin:0 0 6px">Източник: ${esc(a.ntrSource)}</p>` : ""}<p class="ok">Регистър: ${a.ntr.length} записа. Свързани с хотел на картата: ${st.matched}. Намерени по адрес: ${st.located}. Без място на картата: ${st.unmatched.length + st.nogeo}${st.nogeo ? ` (${fmt(st.nogeoBeds)} легла; адресът им не е открит)` : ""}.</p>
       ${st.unmatched.length ? `<div class="row" style="justify-content:space-between"><span class="hint" style="margin:0">Системата може да ги потърси по адрес (около 1 секунда на обект).</span><button class="btn" id="ntrGeo">Намери адресите</button></div>` : ""}
       <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="linkbtn" id="ntrDel" style="color:var(--bad)">Махни данните от регистъра</button></div>` : "");
     if ($("ntrGeo")) $("ntrGeo").onclick = async () => {
@@ -832,7 +884,7 @@ function ntrDialog() {
       const n = await ntrGeocode(a, st.unmatched.slice(0, 150), (t) => { $("ntrRes").innerHTML = `<p class="hint">${esc(t)}</p>`; });
       persist(); $("ntrRes").innerHTML = ""; draw(`<p class="hint">Намерени по адрес: ${n}.</p>`); loadArea(false);
     };
-    if ($("ntrDel")) $("ntrDel").onclick = () => { a.ntr = null; a.stays = a.stays.filter((h) => !h.ntrAdded); persist(); closeModal(); toastMeta("Данните от регистъра са махнати. Обнови зоната, за да върнеш оценките от OSM."); };
+    if ($("ntrDel")) $("ntrDel").onclick = () => { ntrReset(a); a.ntr = []; persist(); closeModal(); loadArea(false); toastMeta("Данните от регистъра са махнати; леглата са отново оценки от OSM."); };
   };
   openModal(`<h3>Хотели от Националния туристически регистър</h3>
     <p class="hint">Министерството на туризма публикува категоризираните места за настаняване с категория, брой стаи и брой легла. Системата свързва всеки обект с хотела на картата по име, а останалите търси по адрес. Така леглата по хотели стават официални числа.</p>
@@ -1014,8 +1066,9 @@ function renderAnalysis(list) {
   }).filter((r) => r.n);
   const brands = Object.entries(chainCounts(list)).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1]).slice(0, 10);
 
-  const ntrStays = a.stays.filter((h) => h.beds_how === "НТР"), ntrBeds = ntrStays.reduce((t, h) => t + h.beds, 0);
-  const ntrLine = ntrStays.length ? ` · НТР: ${fmt(ntrBeds)} в ${ntrStays.length} обекта` : "";
+  const ntrAll = (a.ntr || []).reduce((t, r) => t + (r.beds || r.rooms * 2), 0);
+  const ntrMap = a.stays.filter((h) => h.beds_how === "НТР").reduce((t, h) => t + h.beds, 0);
+  const ntrLine = a.ntr && a.ntr.length ? ` · регистър: ${fmt(ntrAll)} легла, ${fmt(ntrMap)} на картата` : "";
   const bedsTile = S && S.y.beds
     ? `<div class="tile"><div class="l">Легла в зоната</div><div class="v">${fmt(S.y.beds)}</div><div class="s">НСИ ${S.Y}, ${fmt(S.y.places || 0)} места · по хотели ≈ ${fmt(osmBeds)}${ntrLine}</div></div>`
     : `<div class="tile"><div class="l">Легла в зоната</div><div class="v">≈ ${fmt(osmBeds)}</div><div class="s">${fmt(a.stays.length)} места за настаняване${ntrLine || " · оценка от OSM"}</div></div>`;
