@@ -551,6 +551,11 @@ def load_tourism():
 # ---------------------------------------------------------------------------
 # ЗАПИС
 # ---------------------------------------------------------------------------
+def excel_cell(v):
+    """Текст, който започва с = + - @, Excel изпълнява като формула; апострофът отпред го прави обикновен текст."""
+    return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
 def save(area_id, area_name, bbox, records, stays, malls, other):
     os.makedirs(DATA_DIR, exist_ok=True)
     store_path = os.path.join(DATA_DIR, "areas.json")
@@ -571,8 +576,9 @@ def save(area_id, area_name, bbox, records, stays, malls, other):
         wr.writerow(["име", "марка", "бранш", "lat", "lon", "адрес", "телефон", "сайт", "работно време", "мол",
                      "площ м²", "точност на площта", "източници"])
         for r in records:
-            wr.writerow([r["name"], r["brand"], config.CATEGORIES[r["cat"]][0], r["lat"], r["lon"], r["address"],
-                         r["phone"], r["website"], r["hours"], r["mall"], r["area"], r["area_conf"], " + ".join(r["sources"])])
+            wr.writerow([excel_cell(v) for v in (
+                r["name"], r["brand"], config.CATEGORIES[r["cat"]][0], r["lat"], r["lon"], r["address"],
+                r["phone"], r["website"], r["hours"], r["mall"], r["area"], r["area_conf"], " + ".join(r["sources"]))])
 
 
 def main():
