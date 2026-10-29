@@ -12,7 +12,7 @@
 :root {
   --bg: #eef1ef; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67; --line: #d5ddd9;
   --accent: #1d6b5f; --accent-fg: #ffffff; --accent-soft: #dcece8; --warn: #a1620f; --bad: #b3362b; --chip: #f4f7f5;
-  --tile-filter: none; --shadow: 0 8px 30px rgba(20,40,35,.18);
+  --tile-filter: none; --shadow: 0 8px 30px rgba(20,40,35,.18); --opp: #d9480f;
   --font-display: "Unbounded", "Golos Text", system-ui, sans-serif;
   --font-body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
   --r: 8px;
@@ -117,6 +117,19 @@ td input { width: 110px; padding: 4px 6px }
 .note { color: var(--muted); font-size: 12px; margin-top: 8px; max-width: 75ch }
 input[type=range] { accent-color: var(--accent); width: 140px }
 .empty { padding: 30px 20px; text-align: center; color: var(--muted) }
+.opp { top: 12px; left: 56px; width: min(320px, calc(100% - 68px)); max-height: calc(100% - 24px); overflow: auto; padding: 12px 14px }
+.opp h3 { font: 600 14px/1.25 var(--font-body); margin: 0 26px 2px 0 }
+.opp ol { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px }
+.opp li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; border: 1px solid var(--line) }
+.opp li:hover, .opp li:focus-visible { border-color: var(--opp) }
+.opp .rank { width: 22px; height: 22px; border-radius: 50%; background: var(--opp); color: #fff; display: grid; place-items: center; font: 700 12px/1 var(--font-body) }
+.opp .why { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.opp-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 8px }
+.opp-legend i { flex: 1; height: 6px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--opp) 15%, transparent), var(--opp)) }
+.opp-pin { background: var(--opp); color: #fff; border: 2px solid #fff; border-radius: 50%; width: 26px !important; height: 26px !important; display: grid; place-items: center; font: 700 13px/1 "Golos Text", system-ui, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.35) }
+.demo-badge { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--opp); border: 1px solid var(--opp); border-radius: 99px; padding: 2px 8px }
+.navlink { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap }
+.navlink:hover { text-decoration: underline }
 .welcome { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 22px; width: min(400px, calc(100% - 24px)); text-align: center }
 .welcome p { color: var(--muted); margin: 8px 0 14px }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
@@ -133,11 +146,13 @@ input[type=range] { accent-color: var(--accent); width: 140px }
 <div class="wrap">
   <header>
     <h1>Търговски обекти</h1>
+    <span class="demo-badge" id="demoBadge" hidden title="Примерни данни, събрани предварително">Демо</span>
     <select id="area" aria-label="Зона"></select>
     <button class="btn primary" id="btnNew">+ Нова зона</button>
     <button class="btn" id="btnRefresh" title="Събери отново данните за тази зона">Обнови зоната</button>
     <span class="meta" id="meta"></span>
     <span class="spacer"></span>
+    <a class="navlink" href="kak-e-napraveno.html">Как е направено с AI →</a>
     <button class="btn" id="btnNsi">Данни НСИ</button>
     <button class="btn" id="btnImport">Импорт CSV</button>
     <button class="btn" id="btnExport">Експорт</button>
@@ -159,11 +174,16 @@ input[type=range] { accent-color: var(--accent); width: 140px }
         <label class="toggle"><input type="checkbox" id="inmall"> Само в молове</label>
         <label class="toggle"><input type="checkbox" id="showstay"> Покажи хотелите</label>
       </section>
+      <section style="display:grid;gap:8px">
+        <h2 style="margin:0">Къде липсва?</h2>
+        <div class="row"><select id="oppCat" aria-label="Бранш за картата на възможностите" style="flex:1"></select><button class="btn" id="oppBtn">Покажи</button></div>
+      </section>
       <div class="list" id="list"></div>
     </aside>
     <div class="mapbox">
       <div id="map"></div>
       <div class="float detail" id="detail" hidden></div>
+      <div class="float opp" id="opp" hidden></div>
       <div class="float progress" id="progress" hidden><span id="progressText">Събиране…</span><div class="barl"><i></i></div></div>
       <div class="float welcome" id="welcome" hidden>
         <h3 style="font:700 16px/1.2 var(--font-display);margin:0">Няма събрани зони</h3>
@@ -182,6 +202,7 @@ input[type=range] { accent-color: var(--accent); width: 140px }
 <input type="file" id="fileNsi" accept=".csv,text/csv" multiple hidden>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="demo/demo.js"></script>
 <script>
 "use strict";
 /* =====================================================================
@@ -218,6 +239,14 @@ const KEY = "targovski-obekti-v1";
 let DB = { areas: {}, nsi: {}, settings: { proxy: "", proxyKey: "" }, ui: {} };
 let memoryOnly = false;
 try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.areas) DB = Object.assign(DB, s); } catch (e) { memoryOnly = true; }
+// Демо: при празен браузър зарежда предварително събраните данни (demo/demo.js)
+function loadDemo() {
+  const d = window.DEMO_DATA; if (!d || !d.areas) return false;
+  DB.areas = JSON.parse(JSON.stringify(d.areas)); DB.nsi = JSON.parse(JSON.stringify(d.nsi || {}));
+  DB.demo = true; DB.ui = Object.assign({}, DB.ui, { area: d.startArea || Object.keys(d.areas)[0] });
+  return true;
+}
+if (!Object.keys(DB.areas).length) loadDemo();
 function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(DB)); return true; }
   catch (e) { memoryOnly = true; toastMeta("Браузърът не позволи запис. Направи Експорт → резервно копие, за да не загубиш данните."); return false; }
@@ -591,6 +620,8 @@ function loadArea(fit = true) {
     .bindTooltip(`${esc(h.name || h.type)} · ≈${fmt(h.beds)} легла (${esc(h.beds_how)})`).addTo(stayLayer));
   $("brands").innerHTML = Object.entries(chainCounts(a.shops)).sort((x, y) => y[1] - x[1]).slice(0, 300).map(([b, n]) => `<option value="${esc(b)}">${n} обекта</option>`).join("");
   renderCats(); render();
+  if (opp.on) oppRender();
+  $("demoBadge").hidden = DB.demo !== true;
 }
 
 function renderCats() {
@@ -646,6 +677,83 @@ function select(id, fly) {
   $("dConf").onclick = () => { const v = parseFloat($("dArea").value); if (!(v > 0)) { $("dArea").focus(); return; } confirmArea(s, v); render(); select(id); };
   if ($("dUnconf")) $("dUnconf").onclick = () => { confirmArea(s, 0); render(); select(id); };
   $("dclose").onclick = () => { $("detail").hidden = true; state.sel = null; document.querySelectorAll(".item.on").forEach((e) => e.classList.remove("on")); };
+}
+
+/* =====================================================================
+   КАРТА НА ВЪЗМОЖНОСТИТЕ: къде има много гости наоколо, а малко обекти от бранша
+   Търсене = легла в пешеходна близост; предлагане = площта на обектите от бранша наблизо.
+   ===================================================================== */
+const OPP = { R: 400, SIGMA: 250, CELL: 100 }; // радиус и мащаб в метри
+const opp = { on: false, cat: null, prevCats: null, layer: null, spots: [] };
+function oppCompute(a, cat) {
+  const lat0 = (a.bbox[0] + a.bbox[2]) / 2, xy = (la, lo) => toXY(la, lo, lat0);
+  const stays = a.stays.map((h) => ({ p: xy(h.lat, h.lon), beds: h.beds }));
+  const shops = a.shops.filter((s) => s.cat === cat).map((s) => ({ s, p: xy(s.lat, s.lon) }));
+  const typ = CATEGORIES[cat].size[1];
+  const R = nsiFor(a), S = R ? nsiSummary(R) : null, osmBeds = stays.reduce((t, h) => t + h.beds, 0);
+  const scale = S && S.y.beds && osmBeds ? S.y.beds / osmBeds : 1; // разпределение по OSM, общо по НСИ
+  const dLat = OPP.CELL / 110540, dLon = OPP.CELL / (111320 * Math.cos(lat0 * Math.PI / 180));
+  const cells = [];
+  const k = (d) => Math.exp(-(d * d) / (2 * OPP.SIGMA * OPP.SIGMA));
+  for (let la = a.bbox[0] + dLat / 2; la < a.bbox[2]; la += dLat) for (let lo = a.bbox[1] + dLon / 2; lo < a.bbox[3]; lo += dLon) {
+    const p = xy(la, lo);
+    let dem = 0, near = 0, sup = 0, cnt = 0, nearest = null, nd = Infinity;
+    for (const h of stays) { const d = Math.hypot(h.p[0] - p[0], h.p[1] - p[1]); if (d < OPP.R * 2) dem += h.beds * k(d); if (d <= OPP.R) near += h.beds; }
+    for (const x of shops) { const d = Math.hypot(x.p[0] - p[0], x.p[1] - p[1]); if (d < OPP.R * 2) sup += (x.s.area / typ) * k(d); if (d <= OPP.R) cnt++; if (d < nd) { nd = d; nearest = x.s; } }
+    if (near < 1) continue;
+    cells.push({ la, lo, score: dem / (1 + sup * 3), near: near * scale, cnt, nearest, nd });
+  }
+  const max = Math.max(0, ...cells.map((c) => c.score));
+  cells.forEach((c) => c.v = max ? c.score / max : 0);
+  // топ места: най-силните клетки, на поне 2R една от друга
+  const spots = [];
+  for (const c of [...cells].sort((x, y) => y.score - x.score)) {
+    if (spots.length >= 3 || c.v < 0.35) break;
+    if (spots.every((s) => distM([s.la, s.lo], [c.la, c.lo]) > OPP.R * 2)) spots.push(c);
+  }
+  return { cells, spots, dLat, dLon, scale, fromNsi: scale !== 1 };
+}
+function oppRender() {
+  const a = A(); if (!opp.layer) opp.layer = L.layerGroup().addTo(map);
+  opp.layer.clearLayers();
+  if (!opp.on || !a) { $("opp").hidden = true; return; }
+  const r = oppCompute(a, opp.cat), color = getComputedStyle(document.documentElement).getPropertyValue("--opp").trim() || "#d9480f";
+  r.cells.filter((c) => c.v >= 0.12).forEach((c) => L.rectangle([[c.la - r.dLat / 2, c.lo - r.dLon / 2], [c.la + r.dLat / 2, c.lo + r.dLon / 2]],
+    { stroke: false, fillColor: color, fillOpacity: 0.08 + 0.5 * c.v, interactive: false }).addTo(opp.layer));
+  r.spots.forEach((c, i) => L.marker([c.la, c.lo], { icon: L.divIcon({ className: "", html: `<div class="opp-pin">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
+    .on("click", () => oppFocus(i)).addTo(opp.layer));
+  opp.spots = r.spots;
+  const lbl = CATEGORIES[opp.cat].label.toLowerCase();
+  const why = (c) => `≈ ${fmt(c.near)} легла в радиус ${OPP.R} м · ${c.cnt ? c.cnt + " " + (c.cnt === 1 ? "обект" : "обекта") + " от бранша" : "нито един обект от бранша"}${c.nearest ? ` · най-близкият на ${fmt(c.nd)} м (${esc(c.nearest.name)})` : ""}`;
+  $("opp").innerHTML = `<button class="close" aria-label="Затвори" id="oppClose">×</button>
+    <h3>Къде липсва: ${esc(lbl)}</h3>
+    <div class="meta">Много гости наоколо, малко ${esc(lbl)}. Оцветено е съотношението търсене / предлагане.</div>
+    ${r.spots.length ? `<ol>${r.spots.map((c, i) => `<li tabindex="0" data-i="${i}"><span class="rank">${i + 1}</span><span><b>Място ${i + 1}</b><div class="why">${why(c)}</div></span></li>`).join("")}</ol>`
+      : '<p class="meta" style="margin:8px 0 0">Няма ясно изразени празни места: браншът покрива зоната равномерно спрямо хотелите.</p>'}
+    <div class="opp-legend"><span>слабо</span><i></i><span>силно</span></div>
+    <p class="meta" style="margin:8px 0 0;font-size:11px">Легла: ${r.fromNsi ? "общият брой е от НСИ, разпределен по хотелите в OSM" : "оценка от OSM"}. Пешеходен радиус ${OPP.R} м. Обектите, които OSM не познава, не са отчетени.</p>`;
+  $("opp").hidden = false;
+  $("oppClose").onclick = oppOff;
+  $("opp").querySelectorAll("li").forEach((li) => { li.onclick = () => oppFocus(+li.dataset.i); li.onkeydown = (e) => { if (e.key === "Enter") oppFocus(+li.dataset.i); }; });
+}
+function oppFocus(i) { const c = opp.spots[i]; if (c) map.setView([c.la, c.lo], 17); }
+function oppOn(cat) {
+  if (!opp.on) opp.prevCats = new Set(state.cats);
+  opp.on = true; opp.cat = cat; state.cats = new Set([cat]);
+  stayLayer.addTo(map); $("showstay").checked = true; state.showstay = true;
+  $("detail").hidden = true; $("oppBtn").textContent = "Скрий";
+  renderCats(); render(); oppRender();
+  const a = A(); map.fitBounds([[a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]]);
+}
+function oppOff() {
+  opp.on = false; if (opp.prevCats) state.cats = opp.prevCats; $("oppBtn").textContent = "Покажи";
+  renderCats(); render(); oppRender();
+}
+function oppInit() {
+  $("oppCat").innerHTML = Object.entries(CATEGORIES).map(([id, c]) => `<option value="${id}">${esc(c.label)}</option>`).join("");
+  $("oppCat").value = "obuvki";
+  $("oppBtn").onclick = () => opp.on && opp.cat === $("oppCat").value ? oppOff() : oppOn($("oppCat").value);
+  $("oppCat").onchange = () => { if (opp.on) oppOn($("oppCat").value); };
 }
 
 /* =====================================================================
@@ -998,7 +1106,7 @@ async function collect(id, name, bbox) {
     if (prev) mergeInto(res.shops, prev.shops.filter((s) => !s.id.startsWith("osm:")).map((s) => Object.assign({}, s, { sources: [...s.sources] })));
     DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [] }, res);
     if (DB.settings.proxy && DB.settings.proxyKey) { progress("Проверка на сайтовете…"); await enrichArea(DB.areas[id], progress); }
-    state.area = id; saveUI(); persist(); CAL = calibration();
+    DB.demo = false; state.area = id; saveUI(); persist(); CAL = calibration();
     progress(""); loadArea();
     toastMeta(`${name}: ${res.shops.length} обекта в браншовете, ${res.stays.length} места за настаняване`);
   } catch (e) {
@@ -1085,6 +1193,7 @@ function exportDialog() {
       <button class="btn" id="eCsv">Таблица за Excel (CSV) — само „${esc(A().name)}“</button>
       <button class="btn" id="eJson">Резервно копие на всички зони (JSON)</button>
       <button class="btn" id="eLoad">Зареди резервно копие</button>
+      ${window.DEMO_DATA ? '<button class="btn" id="eDemo">Върни демо данните</button>' : ""}
     </div>
     <p class="hint" style="margin-top:12px">Данните се пазят в този браузър. Резервното копие ги пренася на друг компютър или браузър.</p>
     <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
@@ -1093,6 +1202,10 @@ function exportDialog() {
     $("eCsv").onclick = () => download(`${state.area}.csv`, exportCSV(A()), "text/csv");
     $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(DB), "application/json");
     $("eLoad").onclick = () => $("fileJson").click();
+    if ($("eDemo")) $("eDemo").onclick = () => {
+      $("eConfirm").innerHTML = `<p class="err">Всички зони в този браузър ще бъдат заменени с демо данните. Ако имаш свои данни, първо направи резервно копие.</p><button class="btn" id="eDemoYes">Да, върни демото</button>`;
+      $("eDemoYes").onclick = () => { loadDemo(); state.area = DB.ui.area; persist(); closeModal(); CAL = calibration(); loadArea(); };
+    };
     $("eDel").onclick = () => {
       $("eConfirm").innerHTML = `<p class="err">Сигурен ли си? Ще се изтрият и импортираните обекти и туристическите данни за зоната.</p><button class="btn" id="eYes">Да, изтрий</button>`;
       $("eYes").onclick = () => { delete DB.areas[state.area]; state.area = Object.keys(DB.areas)[0]; saveUI(); persist(); closeModal(); loadArea(); };
@@ -1104,7 +1217,7 @@ $("fileJson").onchange = async (e) => {
   try {
     const j = JSON.parse(await f.text());
     if (!j.areas) throw new Error();
-    Object.assign(DB.areas, j.areas); if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, j.nsi); if (j.settings) DB.settings = Object.assign(DB.settings, j.settings);
+    DB.demo = false; Object.assign(DB.areas, j.areas); if (j.nsi) DB.nsi = Object.assign(DB.nsi || {}, j.nsi); if (j.settings) DB.settings = Object.assign(DB.settings, j.settings);
     persist(); closeModal(); loadArea();
     toastMeta(`Заредени ${Object.keys(j.areas).length} зони от резервното копие.`);
   } catch (err) { toastMeta("Файлът не е резервно копие от тази система."); }
@@ -1166,7 +1279,7 @@ if (typeof L === "undefined") {
   $("btnSettings").onclick = settingsDialog;
   $("btnNsi").onclick = nsiDialog;
   $("btnWelcome").onclick = () => collect("slanchev-bryag", ...PRESETS["slanchev-bryag"]);
-  migrate(); CAL = calibration();
+  migrate(); CAL = calibration(); oppInit();
   loadArea();
 }
 </script>

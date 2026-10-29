@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Как е направено с AI · Търговски обекти</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: една колона за четене; хронология с часове вляво; skills като групи с роля и резултат */
+:root {
+  --bg: #eef1ef; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67; --line: #d5ddd9;
+  --accent: #1d6b5f; --accent-soft: #dcece8; --human: #d9480f; --human-soft: #fbe6dc; --ai2: #5b4bb3; --ai2-soft: #e8e4f7;
+  --font-display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --font-body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111615; --panel: #1a211f; --fg: #e3ebe8; --muted: #93a39e; --line: #2c3633;
+  --accent: #5fc0ad; --accent-soft: #1f3631; --human: #f08a5d; --human-soft: #3a2419; --ai2: #a99cf0; --ai2-soft: #27223f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111615; --panel: #1a211f; --fg: #e3ebe8; --muted: #93a39e; --line: #2c3633;
+  --accent: #5fc0ad; --accent-soft: #1f3631; --human: #f08a5d; --human-soft: #3a2419; --ai2: #a99cf0; --ai2-soft: #27223f; color-scheme: dark }
+
+* { box-sizing: border-box }
+html, body { margin: 0 }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 860px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: 44px }
+a { color: var(--accent) }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 14px }
+.top a { font-weight: 600; text-decoration: none }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px }
+h1 { font: 700 clamp(26px, 5vw, 40px)/1.12 var(--font-display); letter-spacing: -.015em; margin: 0; text-wrap: balance }
+h2 { font: 700 21px/1.25 var(--font-display); margin: 0 0 6px; text-wrap: balance }
+h3 { font: 600 16px/1.3 var(--font-body); margin: 0 }
+p { margin: 0; max-width: 66ch }
+.lead { font-size: 18px; color: var(--muted); margin-top: 14px }
+.sub { color: var(--muted); margin-bottom: 18px }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 24px }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px }
+.stat b { display: block; font: 600 26px/1.1 var(--font-body); font-variant-numeric: tabular-nums }
+.stat span { font-size: 13px; color: var(--muted) }
+
+/* кой какво */
+.who { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px }
+.who > div { border-radius: 8px; padding: 14px 16px; border: 1px solid var(--line); background: var(--panel); min-width: 0 }
+.who h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px }
+.who p { font-size: 14px; color: var(--muted) }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block }
+.h { background: var(--human) } .c { background: var(--accent) } .b { background: var(--ai2) }
+
+/* хронология */
+.tl { list-style: none; margin: 0; padding: 0; display: grid; gap: 0 }
+.tl li { display: grid; grid-template-columns: 84px 14px minmax(0, 1fr); gap: 0 14px; position: relative }
+.tl time { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--muted); text-align: right; padding-top: 1px }
+.tl .rail { position: relative }
+.tl .rail::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--line) }
+.tl li:last-child .rail::before { bottom: auto; height: 10px }
+.tl .rail .dot { position: absolute; left: 2px; top: 7px; width: 10px; height: 10px; box-shadow: 0 0 0 3px var(--bg) }
+.tl .body { padding-bottom: 20px; min-width: 0 }
+.tl .body p { font-size: 15px; color: var(--muted); margin-top: 2px }
+.tl li.day { display: block; grid-column: 1 / -1; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 4px 0 12px 98px }
+
+/* skills */
+.group { display: grid; gap: 10px; margin-top: 22px }
+.group > h3 { font-size: 13px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted) }
+.skill { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 4px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px }
+.skill code { font: 600 14px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; overflow-wrap: anywhere }
+.skill .who-tag { display: block; font-size: 12px; color: var(--muted); margin-top: 2px }
+.skill p { font-size: 15px }
+.skill .out { display: block; font-size: 13px; color: var(--muted); margin-top: 4px }
+.skill.used { border-left: 3px solid var(--accent) }
+.skill.avail { border-left: 3px solid var(--ai2) }
+.skill.new { border-left: 3px dashed var(--human) }
+.principle { background: var(--accent-soft); border-radius: 8px; padding: 16px 18px }
+.principle p { max-width: none }
+.honest li { margin-bottom: 6px; max-width: 66ch }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px }
+
+@media (max-width: 600px) {
+  .skill { grid-template-columns: minmax(0, 1fr) }
+  .tl li { grid-template-columns: 52px 14px minmax(0, 1fr); gap: 0 10px }
+  .tl time { font-size: 13px }
+  .tl .day { padding-left: 0 }
+}
+</style>
+</head>
+<body>
+<main>
+  <nav class="top"><a href="./">← Към системата</a><a href="https://github.com/obuchenie-testove/targovski-obekti" target="_blank" rel="noopener">Кодът в GitHub</a></nav>
+
+  <header>
+    <p class="eyebrow">Демонстрация · човек и AI системи</p>
+    <h1>От гласова бележка до работеща система за около 4 часа</h1>
+    <p class="lead">Карта на търговските обекти по бранш и марка, с оценка на площта и броя гости, свързана с данните на НСИ. Идеята и решенията са на човек. Кодът, анализите и данните са направени от AI системи, всяка в своята роля.</p>
+    <div class="stats">
+      <div class="stat"><b>~4 ч</b><span>от идеята до публикувана система с red team</span></div>
+      <div class="stat"><b>19 740</b><span>стойности от НСИ, събрани от друг AI екип</span></div>
+      <div class="stat"><b>3</b><span>участници: човек, Claude, екип от AI роли</span></div>
+      <div class="stat"><b>0</b><span>езикови модели вътре в самата система</span></div>
+    </div>
+  </header>
+
+  <section class="principle">
+    <h2>AI в изграждането, не в системата</h2>
+    <p>Самата система не вика нито един езиков модел. Всяко число идва от отворени данни и правила, които могат да се проверят: OpenStreetMap, НСИ и прости формули. AI е използван там, където е силен: да превърне идея в код, да провери решенията и да събере данните. Така резултатът е евтин за поддръжка, прозрачен и не „измисля“.</p>
+  </section>
+
+  <section>
+    <h2>Кой какво направи</h2>
+    <p class="sub">Три участника, които работиха паралелно, всеки в своята част.</p>
+    <div class="who">
+      <div><h3><span class="dot h"></span>Човек</h3><p>Идеята като гласова бележка, решенията (без LLM вътре, без Python, демо вместо продукт), проверката на живо. Първото реално събиране и откриването на блокираната карта станаха при него.</p></div>
+      <div><h3><span class="dot c"></span>Claude</h3><p>Спецификация от бележката, архитектура, целият код, проучване на алтернативите, red team и premortem анализ, поправките, публикуването в GitHub и тази страница.</p></div>
+      <div><h3><span class="dot b"></span>Belbin AI екип</h3><p>Отделен екип от AI роли събра данните на НСИ за черноморските курорти в Google Drive, със собствен регистър на източниците и доклад. Claude ги свърза със системата.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Хронология</h2>
+    <p class="sub">Реалните часове на работата, по софийско време.</p>
+    <ol class="tl">
+      <li class="day">28 октомври 2026</li>
+      <li><time>15:51</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Идеята, разказана свободно</h3><p>Гласова бележка: магазини по бранш на карта, площ, брой хора, история за курортите. Claude я подрежда в спецификация с пет отворени въпроса.</p></div></li>
+      <li><time>15:53</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Решения</h3><p>Без езикови модели в системата, OpenStreetMap вместо платения Google, само България, браншове за мол, първо за собствена употреба.</p></div></li>
+      <li><time>~16:00</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Първа версия</h3><p>Събирач на Python: OpenStreetMap, сайтовете на обектите и CSV списъци; оценки на площ и легла; карта с анализ. Тествана с примерни данни.</p></div></li>
+      <li><time>16:08</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>„Не искам Python“ — уеб версия</h3><p>Цялата система е пренаписана като една HTML страница, която събира данните директно от браузъра.</p></div></li>
+      <li><time>16:36</time><span class="rail"><span class="dot b"></span></span><div class="body"><h3>Паралелно: AI екипът започва НСИ</h3><p>Координатор, Проучвател и Завършител събират курортната статистика: 7 Excel файла, 3 CSV извлечения, регистър на източниците.</p></div></li>
+      <li><time>16:48</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Първи реални данни и първи проблем</h3><p>67 обекта и 324 места за настаняване в Слънчев бряг. Картата обаче е блокирана от OpenStreetMap. Сменена е с Esri и верига от резервни подложки.</p></div></li>
+      <li><time>17:13</time><span class="rail"><span class="dot b"></span></span><div class="body"><h3>Докладът на AI екипа е готов</h3><p>Със статус „частично, чака преглед“ и списък с непотвърдени заключения.</p></div></li>
+      <li><time>17:20</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Свързване с НСИ</h3><p>Claude чете доклада в Drive, разпознава двата различни формата на файловете и вгражда легла, нощувки, заетост и сезонност.</p></div></li>
+      <li><time>19:25</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>GitHub и публичен адрес</h3><p>Хранилище и GitHub Pages: системата се отваря от линк.</p></div></li>
+      <li><time>19:36</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Red team</h3><p>Пет слабости в собствената работа, подредени по тежест. Четири са поправени веднага: покритие на данните, надута площ, подвеждащ показател, зависимост от безплатни услуги.</p></div></li>
+      <li><time>19:48</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Premortem</h3><p>Седем сценария, при които проектът се проваля, с ранни сигнали и мерки.</p></div></li>
+      <li><time>20:31</time><span class="rail"><span class="dot h"></span></span><div class="body"><h3>Решение: демо, не продукт</h3><p>Целта е да покажем идея и реализация с AI. Приоритетите се сменят: готови данни при отваряне, ясен отговор на въпрос, тази страница.</p></div></li>
+      <li class="day">29 октомври 2026</li>
+      <li><time>07:43</time><span class="rail"><span class="dot c"></span></span><div class="body"><h3>Демо версия</h3><p>Предварително заредени данни, „Къде липсва?“ — карта на местата с много гости и малко обекти от даден бранш, и тази страница.</p></div></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>AI skills: какво беше използвано и какво е възможно</h2>
+    <p class="sub">Skill е пакет от инструкции, който превръща AI в специалист по определена задача и прави резултата повторяем. Тук е картата на уменията около този проект.</p>
+
+    <div class="group">
+      <h3>Използвани в проекта</h3>
+      <div class="skill used"><div><code>belbin-coordinator</code><span class="who-tag">Belbin AI екип</span></div><div><p>Разпредели задачата за НСИ: план, задания, критерии за приемане.</p><span class="out">→ план и task manifest в Drive</span></div></div>
+      <div class="skill used"><div><code>belbin-resource-investigator</code><span class="who-tag">Belbin AI екип</span></div><div><p>Намери и провери източниците в НСИ: годишни и месечни данни за курортите, гъстота, ИНФОСТАТ.</p><span class="out">→ регистър на 8 официални източника</span></div></div>
+      <div class="skill used"><div><code>belbin-completer-finisher</code><span class="who-tag">Belbin AI екип</span></div><div><p>Провери резултата, записа пропуските и не обяви работата за завършена без човешки преглед.</p><span class="out">→ доклад със статус „чака преглед“</span></div></div>
+      <div class="skill used"><div><code>artifact-design</code><span class="who-tag">Claude</span></div><div><p>Визуалната система на интерфейса: палитра, типография, светла и тъмна тема.</p><span class="out">→ интерфейсът на системата и тази страница</span></div></div>
+      <div class="skill used"><div><code>red team · premortem</code><span class="who-tag">Claude, като метод</span></div><div><p>Използвани като задача в разговора, без отделен skill. Намериха пет слабости и седем сценария на провал.</p><span class="out">→ кандидати за самостоятелни skills, виж долу</span></div></div>
+    </div>
+
+    <div class="group">
+      <h3>Налични, още неизползвани тук</h3>
+      <div class="skill avail"><div><code>belbin-monitor-evaluator</code><span class="who-tag">Belbin AI екип</span></div><div><p>Да свери числата на НСИ в системата с първоизточника, преди да се покажат пред хора. Това е най-скритият риск от premortem анализа.</p></div></div>
+      <div class="skill avail"><div><code>belbin-specialist</code><span class="who-tag">Belbin AI екип</span></div><div><p>Да извлече наемателите от сайтовете на моловете и локаторите на веригите като CSV за импорт. Така покритието расте без обход на място.</p></div></div>
+      <div class="skill avail"><div><code>belbin-plant</code><span class="who-tag">Belbin AI екип</span></div><div><p>Варианти на нови въпроси, на които картата може да отговаря: сезонност по бранш, сравнение на курортите, пешеходни потоци.</p></div></div>
+      <div class="skill avail"><div><code>belbin-shaper · teamworker · implementer</code><span class="who-tag">Belbin AI екип</span></div><div><p>Отблокиране при отказал източник, обща терминология между AI системите (НСИ ↔ системата) и прилагане на одобрените промени.</p></div></div>
+      <div class="skill avail"><div><code>nlm-director</code><span class="who-tag">собствен skill</span></div><div><p>Концепция за 3-минутно видео или презентация в NotebookLM от тази хронология и демото.</p></div></div>
+      <div class="skill avail"><div><code>digital-artifact-intelligence</code><span class="who-tag">собствен skill</span></div><div><p>Анализ и оптимизация на публикацията, с която се показва демото: каква „валута“ носи, на кого говори, как да работи по-добре.</p></div></div>
+      <div class="skill avail"><div><code>deep-dive-mentor</code><span class="who-tag">собствен skill</span></div><div><p>Курс отвътре: как мислят хората, които избират къде да отворят магазин. Дава езика и въпросите, които системата трябва да обслужва.</p></div></div>
+      <div class="skill avail"><div><code>creativity-os-coordinator</code><span class="who-tag">фирмен skill</span></div><div><p>Фирмена координация: кой AI поема коя част от следващата версия и как се предава работата между системите.</p></div></div>
+    </div>
+
+    <div class="group">
+      <h3>Възможни нови skills от този проект</h3>
+      <div class="skill new"><div><code>red-team</code></div><div><p>Пет слабости в проект, подредени по тежест, всяка с ранен сигнал и поправка. Работи за код, план или документ.</p></div></div>
+      <div class="skill new"><div><code>premortem</code></div><div><p>„Минала е година и проектът се е провалил — защо?“ Сценарии, ранни сигнали, три действия за следващите 30 дни.</p></div></div>
+      <div class="skill new"><div><code>nsi-sync</code></div><div><p>Веригата Координатор → Проучвател → Завършител като планирана задача: обновява данните на НСИ всеки месец и сигнализира при промяна.</p></div></div>
+      <div class="skill new"><div><code>teren-proba</code></div><div><p>Подготвя полева проба за покритието: кои участъци да се обходят, какво се брои, как се въвежда в системата.</p></div></div>
+      <div class="skill new"><div><code>demo-script</code></div><div><p>От всеки проект прави сценарий за 3-минутно демо: проблем, „аха“ момент, как е направено, какво следва.</p></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Какво AI не направи</h2>
+    <ul class="honest">
+      <li>Не провери нищо на терен. Покритието на данните и реалните площи изискват човек на място.</li>
+      <li>Данните на НСИ още не са приети от човек. Докладът на AI екипа сам го отбелязва.</li>
+      <li>Claude не можа да отвори истинските карти и данни от своята среда. Първото реално събиране и откриването на блокираната карта станаха при човека, който върна снимка на екрана.</li>
+      <li>Изборите кое да се прави, кое да се отложи и кое да остане демо бяха на човека.</li>
+    </ul>
+  </section>
+
+  <footer>Данни: © участниците в OpenStreetMap (ODbL), НСИ. Подложки: Esri, CARTO. Belbin е модел на екипните роли на Meredith Belbin; ролите тук са адаптация за работа на AI с документи.</footer>
+</main>
+</body>
+</html>
