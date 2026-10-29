@@ -111,6 +111,12 @@ main .inner { display: grid; gap: 56px; padding-block: 48px 64px }
 .principles > div { border-top: 2px solid var(--accent); padding-top: 12px }
 .principles p { font-size: 14px; color: var(--muted); margin-top: 4px }
 
+.skills { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px }
+.skills li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline }
+.sk-name { font-weight: 600; text-decoration: none }
+.sk-name::after { content: " ↓"; color: var(--muted); font-weight: 400 }
+.sk-p { font: 600 12px/1 var(--font-mono); color: var(--hot) }
+.sk-d { grid-column: 1 / -1; font-size: 14px; color: var(--muted) }
 footer { border-top: 1px solid var(--line) }
 footer .inner { padding-block: 20px 32px; font-size: 13px; color: var(--muted); display: grid; gap: 6px }
 footer b { color: var(--fg) }
@@ -235,6 +241,24 @@ footer b { color: var(--fg) }
         <li><div><h3>Повиши точността</h3><p>За Слънчев бряг официалните легла по хотели от Националния туристически регистър се зареждат сами; за друга зона — „Хотели (НТР)“. Контролна проба в „Покритие на данните“ и потвърдени площи на познати обекти. Всяка проверка стеснява диапазоните.</p></div></li>
         <li><div><h3>Пази и споделяй</h3><p>„Експорт“: таблица за Excel или резервно копие, което се зарежда на друг компютър.</p></div></li>
       </ol>
+    </section>
+
+    <section>
+      <h2 id="umenia">Библиотека с умения</h2>
+      <p class="sub">Системата събира и изчислява без AI. Десетте умения превръщат изтеглените данни в анализ: изтегляш „Данни за AI анализ“ от Експорт, зареждаш умението в Claude или друга AI система и задаваш въпроса. Всяко умение работи с определен профил на мислене от Creativity OS.</p>
+      <ol class="skills">
+        <li><a class="sk-name" href="skills/zip/obekti-obzor-na-zona.zip" download>Обзор на зона</a><span class="sk-p">0.4</span><span class="sk-d">Паспорт на зоната: търговия, хора, сезон и доколко може да се вярва на данните.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-kade-lipsva.zip" download>Къде липсва</a><span class="sk-p">1.0</span><span class="sk-d">Празнините в търговията като проверими бизнес хипотези.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-hoteli-i-gosti.zip" download>Хотели и гости</a><span class="sk-p">0.4</span><span class="sk-d">Легла, заетост, сезонност и къде нощуват хората.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-potoci-i-arterii.zip" download>Потоци и артерии</a><span class="sk-p">0.6</span><span class="sk-d">Обектите на пътя на хората, сутрин и вечер.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-kachestvo-na-dannite.zip" download>Качество на данните</a><span class="sk-p">0.1</span><span class="sk-d">Red team на данните: дублирания, грешни браншове, площи, покритие.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-sravnenie-na-zoni.zip" download>Сравнение на зони</a><span class="sk-p">0.5</span><span class="sk-d">Два или повече курорта по едни и същи показатели.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-dosie-na-lokacia.zip" download>Досие на локация</a><span class="sk-p">0.2</span><span class="sk-d">Едностранично досие на място или обект с чеклист за оглед.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-plan-za-veriga.zip" download>План за верига</a><span class="sk-p">0.9</span><span class="sk-d">Къде е веригата, къде липсва, три сценария за разширяване.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-teren-proba.zip" download>Теренна проба</a><span class="sk-p">0.1</span><span class="sk-d">Обход на място: участъци, какво се брои, площи за калибровка.</span></li>
+        <li><a class="sk-name" href="skills/zip/obekti-doklad-za-klient.zip" download>Доклад за клиент</a><span class="sk-p">0.4</span><span class="sk-d">Отговор на въпроса на клиента с източници и граници на точността.</span></li>
+      </ol>
+      <p class="sub" style="margin-top:14px"><a href="skills/zip/obekti-skills-vsichki.zip" download>Изтегли цялата библиотека (ZIP)</a> · <a href="https://github.com/obuchenie-testove/targovski-obekti/tree/main/skills" target="_blank" rel="noopener">Преглед в GitHub</a></p>
     </section>
 
     <section>

@@ -567,6 +567,49 @@ function csvToRecords(rows, srcName, bbox) {
   });
   return [out, skipped];
 }
+// Данни за AI анализ: една зона, без настройки и ключове; полетата са описани в skills/SCHEMA.md
+function exportAnalysis(a) {
+  const R = nsiFor(a), S = R ? nsiSummary(R) : null, C = coverage(a);
+  const r1 = (v, d = 1) => v == null || !isFinite(v) ? null : +(+v).toFixed(d);
+  const months = {}; for (let m = 1; m <= 12; m++) { const g = guestsFor(a, m); months[m] = { guests_per_night: Math.round(g.G), source: g.src }; }
+  const opp = {};
+  for (const g of Object.keys(GROUPS)) {
+    const r = oppCompute(a, "g:" + g);
+    opp[g] = r.spots.map((c) => ({ lat: r1(c.la, 5), lon: r1(c.lo, 5), beds_400m: Math.round(c.near), shops_400m: c.cnt, nearest: c.nearest ? c.nearest.name : null, nearest_m: isFinite(c.nd) ? Math.round(c.nd) : null }));
+  }
+  return {
+    schema: "targovski-obekti/analysis@1",
+    generated: new Date().toISOString(),
+    zone: { id: state.area, name: a.name, bbox: a.bbox, collected: a.collected },
+    sources: {
+      openstreetmap: "© OpenStreetMap contributors (ODbL)",
+      overture: a.overture || null, chains: a.chains || null,
+      ntr: a.ntr && a.ntr.length ? { source: a.ntrSource || "", records: a.ntr.length, beds_total: a.ntr.reduce((t, r) => t + (r.beds || r.rooms * 2), 0) } : null,
+      nsi: R ? { resort: a.nsiResort, sources: R.sources } : null,
+    },
+    groups: Object.fromEntries(Object.entries(GROUPS).map(([k, v]) => [k, v.label])),
+    categories: Object.fromEntries(Object.entries(CATEGORIES).map(([k, v]) => [k, { label: v.label, group: v.g, typical_m2: v.size[1] }])),
+    shops: a.shops.map((s) => ({ id: s.id, name: s.name, brand: s.brand || null, cat: s.cat, group: CATEGORIES[s.cat] && CATEGORIES[s.cat].g, lat: s.lat, lon: s.lon,
+      area_m2: s.area, area_method: s.area_conf, area_err: r1(errOf(s), 2), area_confirmed: s.area_true || null, mall: s.mall || null,
+      address: s.address || null, phone: s.phone || null, website: s.website || null, hours: s.hours || null, sources: s.sources,
+      flow_per_day: LY.exposure.has(s.id) ? Math.round(LY.exposure.get(s.id)) : null, popular_hours: s.popular || null })),
+    stays: a.stays.map((h) => ({ name: h.ntrName || h.name || null, beds: h.beds, beds_source: h.beds_how, stars: h.stars || null, lat: h.lat, lon: h.lon })),
+    malls: a.malls.map((m) => ({ name: m.name, lat: r1(m.lat, 5), lon: r1(m.lon, 5), footprint_m2: m.area })),
+    other_shops_count: a.other_shops,
+    coverage: { samples: a.samples || [], rate: C ? r1(C.rate, 3) : null },
+    calibration: CAL,
+    nsi: R ? { resort: a.nsiResort, annual: R.annual, monthly: R.monthly, quarterly: R.quarterly, summary: S ? { year: S.Y, occupancy: r1(S.occupancy, 3), avg_stay_nights: r1(S.stay, 2), peak_month: S.peak ? S.peak.m : null } : null } : null,
+    guests_by_month: months,
+    bed_base: bedBase(a),
+    opportunities_by_group: opp,
+    flows: LY.exposure.size ? { time_of_day: LY.tod, month: LY.month, note: "flow_per_day при обектите е от модела на пешеходните потоци" } : null,
+    notes: [
+      "Всички площи без area_confirmed са оценки; area_err е относителната грешка (0.35 = ±35%).",
+      "Гостите са нощуващи в регистрирани места за настаняване; еднодневните посетители не са включени.",
+      "Броят обекти е колкото познават източниците; coverage.rate (ако има) е делът на познатите спрямо реалните.",
+    ],
+  };
+}
 // KML: папка за всяка обща категория, бранш в описанието; отваря се в Google My Maps и Google Earth
 function exportKML(a) {
   const x = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
@@ -1944,6 +1987,8 @@ function exportDialog() {
   openModal(`<h3>Експорт</h3>
     <div style="display:grid;gap:10px">
       <button class="btn" id="eCsv">Таблица за Excel (CSV) — само „${esc(A().name)}“</button>
+      <button class="btn primary" id="eAi">Данни за AI анализ (JSON) — „${esc(A().name)}“</button>
+      <p class="hint" style="margin:-4px 0 4px">За анализ с <a href="kak-e-napraveno.html#umenia">библиотеката с умения</a>.</p>
       <button class="btn" id="eKml">Карта за Google My Maps / Google Earth (KML) — „${esc(A().name)}“</button>
       <button class="btn" id="eJson">Резервно копие на всички зони (JSON)</button>
       <button class="btn" id="eLoad">Зареди резервно копие</button>
@@ -1954,6 +1999,7 @@ function exportDialog() {
     <button class="linkbtn" id="eDel" style="color:var(--bad)">Изтрий зоната „${esc(A().name)}“</button>
     <div id="eConfirm"></div>`, () => {
     $("eCsv").onclick = () => download(`${state.area}.csv`, exportCSV(A()), "text/csv");
+    $("eAi").onclick = () => download(`analiz-${state.area}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(exportAnalysis(A()), null, 1), "application/json");
     $("eKml").onclick = () => download(`${state.area}.kml`, exportKML(A()), "application/vnd.google-earth.kml+xml");
     $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(DB), "application/json");
     $("eLoad").onclick = () => $("fileJson").click();
