@@ -154,6 +154,7 @@ input[type=range] { accent-color: var(--accent); width: 140px }
     <span class="spacer"></span>
     <a class="navlink" href="kak-e-napraveno.html">Как работи →</a>
     <button class="btn" id="btnNsi">Данни НСИ</button>
+    <button class="btn" id="btnNtr">Хотели (НТР)</button>
     <button class="btn" id="btnImport">Импорт CSV</button>
     <button class="btn" id="btnExport">Експорт</button>
     <button class="btn" id="btnSettings" aria-label="Настройки">Настройки</button>
@@ -200,6 +201,7 @@ input[type=range] { accent-color: var(--accent); width: 140px }
 <input type="file" id="fileCsv" accept=".csv,text/csv" hidden>
 <input type="file" id="fileJson" accept=".json,application/json" hidden>
 <input type="file" id="fileNsi" accept=".csv,text/csv" multiple hidden>
+<input type="file" id="fileNtr" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="demo/demo.js"></script>
@@ -449,7 +451,8 @@ function mergeInto(list, extra) {
    ===================================================================== */
 function parseCSV(text) {
   text = text.replace(/^﻿/, "");
-  const sep = (text.split("\n")[0].match(/;/g) || []).length > (text.split("\n")[0].match(/,/g) || []).length ? ";" : ",";
+  const first = text.split("\n")[0], cnt = (re) => (first.match(re) || []).length;
+  const sep = [["\t", cnt(/\t/g)], [";", cnt(/;/g)], [",", cnt(/,/g)]].sort((a, b) => b[1] - a[1])[0][0];
   const rows = []; let row = [], f = "", q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -600,7 +603,7 @@ function fillAreaSelect() {
   ids.forEach((id) => sel.add(new Option(DB.areas[id].name, id)));
   if (!DB.areas[state.area]) state.area = ids[0];
   sel.value = state.area || "";
-  $("btnRefresh").disabled = !ids.length; $("btnExport").disabled = !ids.length; $("btnImport").disabled = !ids.length; $("btnNsi").disabled = !ids.length;
+  $("btnRefresh").disabled = !ids.length; $("btnExport").disabled = !ids.length; $("btnImport").disabled = !ids.length; $("btnNsi").disabled = !ids.length; $("btnNtr").disabled = !ids.length;
   $("welcome").hidden = !!ids.length;
 }
 
@@ -617,7 +620,7 @@ function loadArea(fit = true) {
     lay.bindTooltip(`${esc(m.name)}${m.area ? " · " + fmt(m.area) + " м² застроена площ" : ""}`).addTo(mallLayer);
   });
   a.stays.forEach((h) => L.circleMarker([h.lat, h.lon], { radius: Math.max(3, Math.min(10, Math.sqrt(h.beds) / 2)), color: "#888", weight: 1, fillColor: "#999", fillOpacity: .35 })
-    .bindTooltip(`${esc(h.name || h.type)} · ≈${fmt(h.beds)} легла (${esc(h.beds_how)})`).addTo(stayLayer));
+    .bindTooltip(`${esc(h.name || h.type)}${h.stars ? " · " + esc(h.stars) : ""} · ${h.beds_how === "НТР" ? "" : "≈"}${fmt(h.beds)} легла (${esc(h.beds_how)})`).addTo(stayLayer));
   $("brands").innerHTML = Object.entries(chainCounts(a.shops)).sort((x, y) => y[1] - x[1]).slice(0, 300).map(([b, n]) => `<option value="${esc(b)}">${n} обекта</option>`).join("");
   renderCats(); render();
   if (opp.on) oppRender();
@@ -731,7 +734,7 @@ function oppRender() {
     ${r.spots.length ? `<ol>${r.spots.map((c, i) => `<li tabindex="0" data-i="${i}"><span class="rank">${i + 1}</span><span><b>Място ${i + 1}</b><div class="why">${why(c)}</div></span></li>`).join("")}</ol>`
       : '<p class="meta" style="margin:8px 0 0">Няма ясно изразени празни места: браншът покрива зоната равномерно спрямо хотелите.</p>'}
     <div class="opp-legend"><span>слабо</span><i></i><span>силно</span></div>
-    <p class="meta" style="margin:8px 0 0;font-size:11px">Легла: ${r.fromNsi ? "общият брой е от НСИ, разпределен по хотелите в OSM" : "оценка от OSM"}. Пешеходен радиус ${OPP.R} м. Обектите, които OSM не познава, не са отчетени.</p>`;
+    <p class="meta" style="margin:8px 0 0;font-size:11px">Легла: ${r.fromNsi ? "общият брой е от НСИ, разпределен по хотелите на картата" : a.stays.some((h) => h.beds_how === "НТР") ? "от регистъра, където е наличен, иначе оценка от OSM" : "оценка от OSM"}. Пешеходен радиус ${OPP.R} м. Обектите, които OSM не познава, не са отчетени.</p>`;
   $("opp").hidden = false;
   $("oppClose").onclick = oppOff;
   $("opp").querySelectorAll("li").forEach((li) => { li.onclick = () => oppFocus(+li.dataset.i); li.onkeydown = (e) => { if (e.key === "Enter") oppFocus(+li.dataset.i); }; });
@@ -754,6 +757,100 @@ function oppInit() {
   $("oppCat").value = "obuvki";
   $("oppBtn").onclick = () => opp.on && opp.cat === $("oppCat").value ? oppOff() : oppOn($("oppCat").value);
   $("oppCat").onchange = () => { if (opp.on) oppOn($("oppCat").value); };
+}
+
+/* =====================================================================
+   НАЦИОНАЛЕН ТУРИСТИЧЕСКИ РЕГИСТЪР: официални легла, стаи и категория по хотели
+   Данните се копират от публичната справка на Министерството на туризма;
+   системата ги свързва с хотелите на картата по име.
+   ===================================================================== */
+const NTR_URL = "https://ntr.tourism.government.bg/CategoryzationAll.nsf/mn.xsp";
+const NTR_COL = { name: ["наименование", "име на обекта", "обект", "име", "name"], cat: ["категория", "звезди", "category", "stars"],
+  beds: ["брой легла", "легла", "beds"], rooms: ["брой стаи", "стаи", "rooms"], addr: ["адрес", "address"],
+  place: ["населено място", "населено", "град", "settlement"], type: ["вид на обекта", "вид", "тип", "type"] };
+function ntrPick(row, k) {
+  for (const key of Object.keys(row)) {
+    const kk = key.toLowerCase().trim();
+    if (NTR_COL[k].some((c) => kk === c || kk.includes(c)) && !(k === "name" && /адрес|вид|тип/.test(kk)) && row[key] !== "") return row[key];
+  }
+  return "";
+}
+// \b не работи с кирилица, затова границите на думите са изрично „не-буква“
+const NTR_STOP = /(^|[^\p{L}])(апартхотел|aparthotel|хотел|hotel|апарт|apart|семеен|family|комплекс|complex|клуб|club|спа|spa|резорт|resort|бутиков|boutique|къща за гости|guest house|вила|villa)(?=[^\p{L}]|$)/giu;
+const hnorm = (s) => norm(String(s || "").toLowerCase().replace(/["„“'«»]/g, " ").replace(NTR_STOP, "$1 ").replace(NTR_STOP, "$1 "));
+function parseNtr(text) {
+  return parseCSV(text).map((r) => ({
+    name: ntrPick(r, "name"), cat: ntrPick(r, "cat"), beds: num(ntrPick(r, "beds")), rooms: num(ntrPick(r, "rooms")),
+    addr: ntrPick(r, "addr"), place: ntrPick(r, "place"), type: ntrPick(r, "type"),
+  })).filter((r) => r.name && (r.beds || r.rooms));
+}
+function ntrMatch(a, rec) {
+  const n = hnorm(rec.name); if (n.length < 3) return null;
+  const cands = a.stays.filter((h) => { const m = hnorm(h.name); return m.length >= 3 && (m === n || (Math.min(m.length, n.length) >= 5 && (m.includes(n) || n.includes(m)))); });
+  return cands.find((h) => hnorm(h.name) === n) || cands[0] || null;
+}
+function applyNtr(a) {
+  const st = { matched: 0, located: 0, unmatched: [] };
+  a.stays = a.stays.filter((h) => !h.ntrAdded);
+  for (const rec of a.ntr || []) {
+    const beds = rec.beds || rec.rooms * 2;
+    const h = ntrMatch(a, rec);
+    if (h) { Object.assign(h, { beds, beds_how: "НТР", stars: rec.cat || h.stars || "", ntrName: rec.name }); st.matched++; continue; }
+    if (rec.lat != null) {
+      a.stays.push({ name: rec.name, type: "hotel", lat: rec.lat, lon: rec.lon, beds, beds_how: "НТР", stars: rec.cat || "", ntrAdded: true });
+      st.located++; continue;
+    }
+    if (!rec.noGeo) st.unmatched.push(rec);
+  }
+  return st;
+}
+async function ntrGeocode(a, recs, onStep) {
+  let found = 0, i = 0;
+  for (const rec of recs) {
+    onStep(`Търсене на адресите: ${++i} от ${recs.length}`);
+    const q = [rec.addr, rec.place || a.name].filter(Boolean).join(", ");
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/search?" + new URLSearchParams({ q, format: "json", limit: 1, countrycodes: "bg",
+        viewbox: [a.bbox[1], a.bbox[2], a.bbox[3], a.bbox[0]].join(","), bounded: 1 }));
+      const j = await r.json();
+      if (j.length) { rec.lat = +(+j[0].lat).toFixed(6); rec.lon = +(+j[0].lon).toFixed(6); found++; } else rec.noGeo = true;
+    } catch (e) { rec.noGeo = true; }
+    await sleep(1100); // правилата на Nominatim: до 1 заявка в секунда
+  }
+  return found;
+}
+function ntrDialog() {
+  const a = A(); if (!a) return;
+  const draw = (msg) => {
+    const st = a.ntr ? applyNtr(a) : null;
+    if (st) persist();
+    $("ntrBody").innerHTML = (msg || "") + (st ? `<p class="ok">Регистър: ${a.ntr.length} обекта. Свързани с хотел на картата: ${st.matched}. Намерени по адрес: ${st.located}. Без място на картата: ${st.unmatched.length}.</p>
+      ${st.unmatched.length ? `<div class="row" style="justify-content:space-between"><span class="hint" style="margin:0">Системата може да ги потърси по адрес (около 1 секунда на обект).</span><button class="btn" id="ntrGeo">Намери адресите</button></div>` : ""}
+      <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="linkbtn" id="ntrDel" style="color:var(--bad)">Махни данните от регистъра</button></div>` : "");
+    if ($("ntrGeo")) $("ntrGeo").onclick = async () => {
+      $("ntrGeo").disabled = true;
+      const n = await ntrGeocode(a, st.unmatched.slice(0, 150), (t) => { $("ntrRes").innerHTML = `<p class="hint">${esc(t)}</p>`; });
+      persist(); $("ntrRes").innerHTML = ""; draw(`<p class="hint">Намерени по адрес: ${n}.</p>`); loadArea(false);
+    };
+    if ($("ntrDel")) $("ntrDel").onclick = () => { a.ntr = null; a.stays = a.stays.filter((h) => !h.ntrAdded); persist(); closeModal(); toastMeta("Данните от регистъра са махнати. Обнови зоната, за да върнеш оценките от OSM."); };
+  };
+  openModal(`<h3>Хотели от Националния туристически регистър</h3>
+    <p class="hint">Министерството на туризма публикува категоризираните места за настаняване с категория, брой стаи и брой легла. Системата свързва всеки обект с хотела на картата по име, а останалите търси по адрес. Така леглата по хотели стават официални числа.</p>
+    <p class="hint">1. Отвори <a href="${NTR_URL}" target="_blank" rel="noopener">справката за местата за настаняване</a> и филтрирай по община (за Слънчев бряг: Несебър).<br>2. Маркирай таблицата с резултатите заедно със заглавния ред и я копирай.<br>3. Постави я тук или избери изтеглен CSV файл.</p>
+    <textarea id="ntrPaste" rows="5" style="width:100%;font:13px/1.4 var(--font-body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px" placeholder="Постави таблицата тук"></textarea>
+    <div class="row" style="justify-content:space-between;margin-top:8px"><button class="linkbtn" id="ntrFile">или избери CSV файл</button><button class="btn primary" id="ntrGo">Свържи с картата</button></div>
+    <div id="ntrRes"></div><div id="ntrBody" style="margin-top:8px"></div>`, () => {
+    const take = (text, src) => {
+      const recs = parseNtr(text);
+      if (!recs.length) { $("ntrRes").innerHTML = '<p class="err">Не разпознах таблицата. Нужен е заглавен ред с колони за име и брой легла или стаи (например „Наименование“, „Брой легла“).</p>'; return; }
+      a.ntr = recs; a.ntrSource = src; persist();
+      $("ntrRes").innerHTML = ""; draw(); loadArea(false);
+    };
+    $("ntrGo").onclick = () => take($("ntrPaste").value, "поставено");
+    $("ntrFile").onclick = () => $("fileNtr").click();
+    $("fileNtr").onchange = async (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) take(await f.text(), f.name); };
+    draw();
+  });
 }
 
 /* =====================================================================
@@ -917,9 +1014,11 @@ function renderAnalysis(list) {
   }).filter((r) => r.n);
   const brands = Object.entries(chainCounts(list)).filter(([, n]) => n >= 2).sort((x, y) => y[1] - x[1]).slice(0, 10);
 
+  const ntrStays = a.stays.filter((h) => h.beds_how === "НТР"), ntrBeds = ntrStays.reduce((t, h) => t + h.beds, 0);
+  const ntrLine = ntrStays.length ? ` · НТР: ${fmt(ntrBeds)} в ${ntrStays.length} обекта` : "";
   const bedsTile = S && S.y.beds
-    ? `<div class="tile"><div class="l">Легла в зоната</div><div class="v">${fmt(S.y.beds)}</div><div class="s">НСИ ${S.Y}, ${fmt(S.y.places || 0)} места · OSM оценка ≈ ${fmt(osmBeds)}</div></div>`
-    : `<div class="tile"><div class="l">Легла в зоната</div><div class="v">≈ ${fmt(osmBeds)}</div><div class="s">оценка от OSM, ${fmt(a.stays.length)} места за настаняване</div></div>`;
+    ? `<div class="tile"><div class="l">Легла в зоната</div><div class="v">${fmt(S.y.beds)}</div><div class="s">НСИ ${S.Y}, ${fmt(S.y.places || 0)} места · по хотели ≈ ${fmt(osmBeds)}${ntrLine}</div></div>`
+    : `<div class="tile"><div class="l">Легла в зоната</div><div class="v">≈ ${fmt(osmBeds)}</div><div class="s">${fmt(a.stays.length)} места за настаняване${ntrLine || " · оценка от OSM"}</div></div>`;
   const peakTile = useNsi
     ? `<div class="tile"><div class="l">Гости на нощ, пик</div><div class="v">${fmt(peak)}</div><div class="s">средно през ${MONTHS_FULL[S.peak.m - 1]} ${S.Y}, по нощувки от НСИ</div></div>`
     : `<div class="tile"><div class="l">Гости в пиков ден</div><div class="v">≈ ${fmt(peak)}</div><div class="s"><label for="occ">легла × заетост ${Math.round(state.occ * 100)}%</label><br><input type="range" id="occ" min="0.2" max="1" step="0.05" value="${state.occ}"></div></div>`;
@@ -1104,7 +1203,8 @@ async function collect(id, name, bbox) {
       }
     }
     if (prev) mergeInto(res.shops, prev.shops.filter((s) => !s.id.startsWith("osm:")).map((s) => Object.assign({}, s, { sources: [...s.sources] })));
-    DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [] }, res);
+    DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [], samples: prev?.samples || [], ntr: prev?.ntr || null }, res);
+    if (DB.areas[id].ntr) applyNtr(DB.areas[id]);
     if (DB.settings.proxy && DB.settings.proxyKey) { progress("Проверка на сайтовете…"); await enrichArea(DB.areas[id], progress); }
     DB.demo = false; state.area = id; saveUI(); persist(); CAL = calibration();
     progress(""); loadArea();
@@ -1278,6 +1378,7 @@ if (typeof L === "undefined") {
   $("btnExport").onclick = exportDialog;
   $("btnSettings").onclick = settingsDialog;
   $("btnNsi").onclick = nsiDialog;
+  $("btnNtr").onclick = ntrDialog;
   $("btnWelcome").onclick = () => collect("slanchev-bryag", ...PRESETS["slanchev-bryag"]);
   migrate(); CAL = calibration(); oppInit();
   loadArea();
