@@ -567,6 +567,17 @@ function csvToRecords(rows, srcName, bbox) {
   });
   return [out, skipped];
 }
+// KML: папка за всяка обща категория, бранш в описанието; отваря се в Google My Maps и Google Earth
+function exportKML(a) {
+  const x = (t) => String(t ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  const folders = Object.entries(GROUPS).map(([g, G]) => {
+    const pts = a.shops.filter((s) => CATEGORIES[s.cat] && CATEGORIES[s.cat].g === g);
+    if (!pts.length) return "";
+    return `<Folder><name>${x(G.label)}</name>${pts.map((s) => `<Placemark><name>${x(s.name)}</name><description>${x([CATEGORIES[s.cat].label, s.brand && "Марка: " + s.brand, s.address, s.phone, s.website, "Площ ≈ " + s.area + " м² (" + s.area_conf + ")", "Източници: " + s.sources.join(", ")].filter(Boolean).join("\n"))}</description><Point><coordinates>${s.lon},${s.lat},0</coordinates></Point></Placemark>`).join("")}</Folder>`;
+  }).join("");
+  const hotels = a.stays.length ? `<Folder><name>Места за настаняване</name>${a.stays.map((h) => `<Placemark><name>${x(h.ntrName || h.name || "(без име)")}</name><description>${x(`${h.beds} легла (${h.beds_how})${h.stars ? ", " + h.stars : ""}`)}</description><Point><coordinates>${h.lon},${h.lat},0</coordinates></Point></Placemark>`).join("")}</Folder>` : "";
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${x(a.name)} — търговски обекти</name><description>${x("Събрано " + a.collected + ". Източници: OpenStreetMap (ODbL), Overture Maps, вериги, НТР.")}</description>${folders}${hotels}</Document></kml>`;
+}
 function exportCSV(a) {
   const head = ["име", "марка", "бранш", "lat", "lon", "адрес", "телефон", "сайт", "работно време", "мол", "площ м²", "точност на площта", "източници"];
   const lines = [head.join(",")].concat(a.shops.map((r) => [r.name, r.brand, CATEGORIES[r.cat].label, r.lat, r.lon, r.address, r.phone, r.website, r.hours, r.mall, r.area, r.area_conf, r.sources.join(" + ")].map(csvCell).join(",")));
@@ -1933,6 +1944,7 @@ function exportDialog() {
   openModal(`<h3>Експорт</h3>
     <div style="display:grid;gap:10px">
       <button class="btn" id="eCsv">Таблица за Excel (CSV) — само „${esc(A().name)}“</button>
+      <button class="btn" id="eKml">Карта за Google My Maps / Google Earth (KML) — „${esc(A().name)}“</button>
       <button class="btn" id="eJson">Резервно копие на всички зони (JSON)</button>
       <button class="btn" id="eLoad">Зареди резервно копие</button>
       ${window.DEMO_DATA ? '<button class="btn" id="eDemo">Върни демо данните</button>' : ""}
@@ -1942,6 +1954,7 @@ function exportDialog() {
     <button class="linkbtn" id="eDel" style="color:var(--bad)">Изтрий зоната „${esc(A().name)}“</button>
     <div id="eConfirm"></div>`, () => {
     $("eCsv").onclick = () => download(`${state.area}.csv`, exportCSV(A()), "text/csv");
+    $("eKml").onclick = () => download(`${state.area}.kml`, exportKML(A()), "application/vnd.google-earth.kml+xml");
     $("eJson").onclick = () => download(`targovski-obekti-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(DB), "application/json");
     $("eLoad").onclick = () => $("fileJson").click();
     if ($("eDemo")) $("eDemo").onclick = () => {
