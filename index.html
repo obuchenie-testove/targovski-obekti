@@ -2038,6 +2038,8 @@ if (typeof L === "undefined") {
   $("btnWelcome").onclick = () => collect("slanchev-bryag", ...PRESETS["slanchev-bryag"]);
   migrate(); CAL = calibration(); oppInit(); lyInit();
   loadArea();
+  // Първо отваряне без данни: Слънчев бряг се събира сам (OpenStreetMap, Overture, вериги, регистър на хотелите)
+  if (!Object.keys(DB.areas).length) { $("welcome").hidden = true; collect("slanchev-bryag", ...PRESETS["slanchev-bryag"]); }
 }
 </script>
 </body>
