@@ -501,7 +501,9 @@ function processOsm(osm, bbox) {
 function same(a, b) {
   if (a.cat !== b.cat || distM([a.lat, a.lon], [b.lat, b.lon]) > DEDUP_M) return false;
   const x = norm(a.name), y = norm(b.name);
-  return !!(x && y && (x.includes(y) || y.includes(x)));
+  if (x && y && (x.includes(y) || y.includes(x))) return true;
+  const p = skel(a.name), q = skel(b.name); // кирилица ↔ латиница
+  return p.length >= 3 && p === q;
 }
 function mergeInto(list, extra) {
   let added = 0, matched = 0;
@@ -683,7 +685,8 @@ function loadArea(fit = true) {
   shopLayer.clearLayers(); stayLayer.clearLayers(); mallLayer.clearLayers();
   const a = A();
   if (!a) { $("list").innerHTML = ""; $("cats").innerHTML = ""; $("analysis").innerHTML = ""; toastMeta(""); return; }
-  toastMeta(`събрано ${a.collected} · ${a.shops.length} обекта · ${a.other_shops} други магазина${memoryOnly ? " · без запис в браузъра" : ""}`);
+  const ovN = a.shops.filter((s) => s.sources.includes("Overture Maps")).length;
+  toastMeta(`събрано ${a.collected} · ${a.shops.length} обекта${ovN ? ` (${ovN} с Overture)` : ""} · ${a.other_shops} други магазина${memoryOnly ? " · без запис в браузъра" : ""}`);
   if (fit) map.fitBounds([[a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]]);
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
   a.malls.forEach((m) => {
@@ -1257,6 +1260,91 @@ function ntrDialog() {
   });
 }
 
+
+/* =====================================================================
+   OVERTURE MAPS: втори отворен източник на обекти (Microsoft, Meta, Amazon, TomTom)
+   Данните са GeoParquet файлове в публичен облак; браузърът ги чете с DuckDB
+   и тегли само частите, които попадат в зоната.
+   ===================================================================== */
+const OV_BASE = "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/";
+const OV_RULES = [
+  [/shoe/, "obuvki"], [/jewel|watch/, "bijuta"], [/luggage|accessor|leather|handbag/, "aksesoari"],
+  [/clothing|apparel|lingerie|swimwear|fashion|boutique/, "drehi"], [/optic|eyewear/, "optika"],
+  [/pharmac|drug_?store/, "apteki"], [/beauty_supply|cosmetic|perfume|personal_care_and_beauty_store/, "kozmetika"],
+  [/beauty_salon|hair|barber|nail|tattoo|massage|laser|waxing|makeup|personal_or_beauty_service|day_spa/, "studia"],
+  [/bakery|pastry|dessert|ice_cream|candy|chocolate|confection/, "pekarni"],
+  [/liquor|wine_(shop|store)|tobacco|vape|(^|\s)beverage_store/, "alkohol"],
+  [/grocery|supermarket|convenience|butcher|produce|health_food|food_and_beverage_store|deli\b/, "hrana"],
+  [/fast_food|casual_eatery|pizza|burger|kebab|food_truck|snack/, "barzo"],
+  [/cafe|coffee|tea_room|juice/, "kafeneta"],
+  [/(^|_|\s)bar($|_|\s)|pub|lounge|dance_club|night_?club|cocktail|beer/, "barove"],
+  [/restaurant|eatery|diner|bistro|grill|steakhouse|food_court/, "restoranti"],
+  [/electronic|mobile_phone|computer|appliance/, "elektronika"],
+  [/hardware|home_and_garden|furniture|home_goods|houseware|interior/, "dom"],
+  [/book|newsstand|stationer|music_and_video/, "knigi"], [/flower|florist|garden_cent/, "cvetya"],
+  [/sporting_goods|bicycle_store|outdoor_store|surf_shop/, "sport"], [/toy|baby/, "detski"],
+  [/gift|souvenir|arts_crafts|art_supply|hobby/, "suveniri"],
+  [/atm|bank|currency|exchange|financial_service/, "obmyana"],
+  [/travel_agency|travel_service|tour_operator|car_rental|rental_service|equipment_rental|boat_rental/, "turizam"],
+  [/laundry|dry_clean|photo|print_shop|tailor|repair/, "drugi_usl"],
+];
+function ovCategory(tx, bc) { const k = `${tx || ""} ${bc || ""}`; for (const [re, c] of OV_RULES) if (re.test(k)) return c; return null; }
+let ovConn = null;
+async function ovConnect(onStep) {
+  if (ovConn) return ovConn;
+  onStep("Зареждане на DuckDB…");
+  const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm");
+  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+  const worker = new Worker(URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })));
+  const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  ovConn = await db.connect();
+  return ovConn;
+}
+async function ovList(prefix, delim) {
+  const r = await fetch(OV_BASE + "?" + new URLSearchParams(Object.assign({ "list-type": 2, prefix }, delim ? { delimiter: "/" } : {})));
+  const t = await r.text();
+  return delim ? [...t.matchAll(/<Prefix>([^<]+)<\/Prefix>/g)].map((m) => m[1]).filter((x) => x !== prefix)
+               : [...t.matchAll(/<Key>([^<]+\.parquet)<\/Key>/g)].map((m) => m[1]);
+}
+async function overtureFetch(a, onStep) {
+  const conn = await ovConnect(onStep);
+  onStep("Търсене на последното издание на Overture…");
+  const rel = (await ovList("release/", true)).sort().pop();
+  const files = await ovList(rel + "theme=places/type=place/", false);
+  if (!files.length) throw new Error("Overture: няма файлове");
+  onStep(`Overture ${rel.split("/")[1]}: четене на ${files.length} файла (около минута)…`);
+  const [s, w, n, e] = a.bbox;
+  // при прекъсната връзка DuckDB понякога съобщава „ZSTD decompression failure“ — един повторен опит стига
+  const run = (sql) => conn.query(sql).catch(() => { onStep("Повторен опит с Overture…"); return conn.query(sql); });
+  const q = await run(`SELECT id, names."primary" AS name, basic_category AS bc, taxonomy."primary" AS tx, confidence AS conf,
+      brand.names."primary" AS brand, websites[1] AS web, phones[1] AS phone, addresses[1].freeform AS addr, operating_status AS st,
+      (bbox.ymin + bbox.ymax) / 2 AS lat, (bbox.xmin + bbox.xmax) / 2 AS lon
+    FROM read_parquet([${files.map((f) => `'${OV_BASE}${f}'`).join(",")}])
+    WHERE bbox.xmin BETWEEN ${w} AND ${e} AND bbox.ymin BETWEEN ${s} AND ${n}`);
+  const rows = q.toArray().map((r) => (r.toJSON ? r.toJSON() : r));
+  return { release: rel.split("/")[1], rows };
+}
+async function overtureAdd(a, onStep) {
+  const { release, rows } = await overtureFetch(a, onStep);
+  const recs = [];
+  for (const r of rows) {
+    const cat = ovCategory(r.tx, r.bc);
+    if (!cat || !r.name || (r.conf != null && r.conf < 0.45) || /closed/.test(r.st || "")) continue;
+    if (cat === "turizam" && /hotel|хотел|apart|апарт|resort|резорт/i.test(r.name)) continue; // хотели, записани като „туристическа услуга“
+    const typ = CATEGORIES[cat].size[1];
+    recs.push({ id: "ov:" + r.id, name: r.name, brand: r.brand || "", cat, lat: +(+r.lat).toFixed(6), lon: +(+r.lon).toFixed(6),
+      address: r.addr || "", phone: r.phone || "", website: r.web || "", hours: "", mall: "",
+      area: typ, area_conf: "типична", area_err: 0.5, area_note: "типична площ за бранша", area_model: typ, area_method: "типична",
+      sources: ["Overture Maps"], osm_url: "" });
+  }
+  a.shops = a.shops.filter((s) => !s.id.startsWith("ov:"));
+  for (const s of a.shops) s.sources = s.sources.filter((x) => x !== "Overture Maps");
+  const [added, matched] = mergeInto(a.shops, recs);
+  a.overture = { release, date: new Date().toLocaleDateString("bg-BG"), rows: rows.length, used: recs.length, added, matched };
+  return a.overture;
+}
+
 /* =====================================================================
    КАЛИБРОВКА НА ПЛОЩТА: сравнява модела с потвърдените реални площи
    ===================================================================== */
@@ -1611,6 +1699,10 @@ async function collect(id, name, bbox) {
     if (prev) mergeInto(res.shops, prev.shops.filter((s) => !s.id.startsWith("osm:")).map((s) => Object.assign({}, s, { sources: [...s.sources] })));
     DB.areas[id] = Object.assign({ nsiResort: prev?.nsiResort ?? guessResort(name), name, bbox, collected: new Date().toLocaleString("bg-BG", { dateStyle: "short", timeStyle: "short" }), tourism: prev?.tourism || [], samples: prev?.samples || [], ntr: prev?.ntr || null }, res);
     if (DB.areas[id].ntr) applyNtr(DB.areas[id]);
+    if (DB.settings.overture !== false) {
+      try { const o = await overtureAdd(DB.areas[id], progress); toastMeta(`Overture: +${o.added} обекта, ${o.matched} съвпадения`); }
+      catch (e) { DB.areas[id].overture = { error: String(e.message || e) }; }
+    }
     if (DB.settings.proxy && DB.settings.proxyKey) { progress("Проверка на сайтовете…"); await enrichArea(DB.areas[id], progress); }
     DB.demo = false; state.area = id; saveUI(); persist(); CAL = calibration();
     progress(""); loadArea();
@@ -1741,6 +1833,7 @@ function settingsDialog() {
     <p class="hint">По подразбиране системата ползва безплатни публични услуги: подложки от Esri и CARTO и сървърите на Overpass за OpenStreetMap. Те са предназначени за лична и лека употреба; условията им ограничават търговската и масовата. Преди работа с клиенти или вериги сложи тук свой доставчик: например MapTiler или Stadia с твой ключ и собствен или платен Overpass сървър.</p>
     <div class="field"><label for="sTile">Адрес на подложка ({z}, {x}, {y})</label><input type="text" id="sTile" placeholder="https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=ТВОЯТ-КЛЮЧ" value="${esc(s.tileUrl || "")}"></div>
     <div class="field"><label for="sTileAttr">Надпис за авторските права на подложката</label><input type="text" id="sTileAttr" placeholder="© MapTiler © OpenStreetMap" value="${esc(s.tileAttr || "")}"></div>
+    <label class="toggle" style="margin-bottom:12px"><input type="checkbox" id="sOv" ${s.overture === false ? "" : "checked"}> Допълвай обектите от Overture Maps при събиране (около минута повече)</label>
     <div class="field"><label for="sOver">Собствен Overpass сървър (по желание)</label><input type="text" id="sOver" placeholder="https://моят-сървър/api/interpreter" value="${esc(s.overpass || "")}"></div>
     <div class="row" style="justify-content:space-between;margin-top:6px"><button class="btn" id="sTest">Провери връзката</button><span class="row"><button class="btn" data-close>Отказ</button><button class="btn primary" id="sSave">Запази</button></span></div>`, () => {
     $("sTest").onclick = async () => {
@@ -1755,7 +1848,7 @@ function settingsDialog() {
       if (tile && !/^https:\/\/.+\{z\}.+\{x\}.+\{y\}/.test(tile.replace("{y}{r}", "{y}"))) { $("sRes").innerHTML = '<p class="err">Адресът на подложката трябва да започва с https:// и да съдържа {z}, {x} и {y}.</p>'; return; }
       const reload = tile !== (s.tileUrl || "");
       s.proxy = $("sProxy").value.trim(); s.proxyKey = $("sKey").value;
-      s.tileUrl = tile; s.tileAttr = $("sTileAttr").value.trim(); s.overpass = $("sOver").value.trim();
+      s.tileUrl = tile; s.tileAttr = $("sTileAttr").value.trim(); s.overpass = $("sOver").value.trim(); s.overture = $("sOv").checked;
       persist(); closeModal();
       if (reload) location.reload();
     };
